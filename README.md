@@ -194,7 +194,7 @@ O backend FastAPI e a tela completa (`Main.elm`) ainda não estão no repositór
 | 3. Prolog: fim de jogo e adversário | Pedro Luiz | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
 | 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm` | ⏳ pendente |
-| 6. Elm: visual | Patrick | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
+| 6. Elm: visual | Patrick Anderson Carvalho dos Santos | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
 | 7. Integração e documentação | — | `backend/app/`, `Makefile`, `RELATORIO.md` | ⏳ pendente |
 
 ## Prazos
