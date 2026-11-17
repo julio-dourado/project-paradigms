@@ -40,4 +40,12 @@ test(rank_bucha_vence_peca_comum) :-
     piece_rank([0,0], C), piece_rank([5,6], N),
     C > N.
 
+test(starter_maior_carroca) :-
+    starter([[3,3],[0,1],[2,4]], [[5,5],[1,2],[0,6]], Turn, Piece),
+    Turn == opponent, Piece == [5,5].
+
+test(starter_sem_carroca_soma_unica) :-
+    starter([[1,2],[5,6]], [[4,5],[0,1]], Turn, Piece),
+    Turn == player, Piece == [5,6].
+    
 :- end_tests(domino).

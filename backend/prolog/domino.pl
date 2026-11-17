@@ -10,9 +10,10 @@
 
 :- module(domino, [
     all_pieces/1,      % -Pieces
-    shuffle/2,           % +Pieces, -Shuffled
-    deal/4,             % +Shuffled, -Player, -Opponent, -Boneyard
-    piece_rank/2       % +Piece, -Rank
+    shuffle/2,         % +Pieces, -Shuffled
+    deal/4,            % +Shuffled, -Player, -Opponent, -Boneyard
+    piece_rank/2,      % +Piece, -Rank
+    starter/4          % +Player, +Opponent, -Turn, -Piece
 ]).
 
 :- use_module(library(lists)).
@@ -45,3 +46,14 @@ deal(Shuffled, Player, Opponent, Boneyard) :-
 %  comuns, vale a soma dos pontos.
 piece_rank([A,A], Rank) :- !, Rank is 100 + A.
 piece_rank([A,B], Rank) :- Rank is A + B.
+
+%% starter(+Player, +Opponent, -Turn, -Piece)
+%  Começa quem tem a maior carroça. Se ninguém tiver carroça, começa quem
+%  tem a peça de maior soma. Piece é a peça que abre o jogo.
+starter(Player, Opponent, Turn, Piece) :-
+    findall(Rank-(Who-P),
+            ( member(Who-Hand, [player-Player, opponent-Opponent]),
+              member(P, Hand),
+              piece_rank(P, Rank) ),
+            Candidates),
+    max_member(_-(Turn-Piece), Candidates).
