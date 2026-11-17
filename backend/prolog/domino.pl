@@ -1,12 +1,16 @@
 :- encoding(utf8).
-% domino.pl -- Preparação de uma partida de dominó (Parte 1: setup)
+% domino.pl -- Responsável pela preparação inicial de uma partida de dominó.
 %
-% Representação (pensada para passar bem pelo janus/JSON):
-%   - Peça:  lista [A,B] com A =< B     ex.: [3,5], [6,6]
-%   - Mão, monte e coleção de peças: listas de peças
-%   - Turn:  o átomo `player` ou `opponent`
+% Representação dos dados:
+% - Cada peça é representada por uma lista com dois números.
+%   Exemplo: [3,5] representa uma peça com 3 e 5 pontos.
+% - As peças são armazenadas em ordem crescente (A =< B),
+%   evitando representar a mesma peça de duas formas diferentes.
+% - As mãos dos jogadores e o monte são listas de peças.
+% - O turno é identificado pelos átomos player ou opponent.
 %
-% Termos compostos NÃO atravessam o janus, por isso só usamos listas e átomos.
+% Utilizamos listas e átomos para facilitar a comunicação com o Janus,
+% que faz a integração entre Prolog e o backend.
 
 :- module(domino, [
     all_pieces/1,      % -Pieces
@@ -21,20 +25,22 @@
 :- use_module(library(random)).
 
 %% all_pieces(-Pieces)
-%  As 28 peças do dominó duplo-seis, sem repetição, sempre com A =< B.
+% Gera todas as 28 peças possíveis do dominó duplo-seis.
+% O primeiro número varia de 0 a 6, enquanto o segundo começa
+% no valor do primeiro número para evitar peças repetidas.
 all_pieces(Pieces) :-
     findall([A,B], ( between(0, 6, A), between(A, 6, B) ), Pieces).
     
     
 %% shuffle(+Pieces, -Shuffled)
-%  Embaralha. É não determinístico por natureza: cada chamada dá um resultado.
+% Recebe a lista de peças e retorna uma nova lista embaralhada.
 shuffle(Pieces, Shuffled) :-
     random_permutation(Pieces, Shuffled).
     
+
 %% deal(+Shuffled, -Player, -Opponent, -Boneyard)
-%  7 peças para cada jogador; as 14 restantes formam o monte (boneyard).
-%  Aqui o Prolog brilha: descrevemos a forma do resultado e a unificação
-%  faz a divisão da lista.
+% Distribui as peças entre os dois jogadores.
+% Cada jogador recebe 7 peças e as 14 restantes ficam no monte.
 deal(Shuffled, Player, Opponent, Boneyard) :-
     length(Player, 7),
     length(Opponent, 7),
@@ -42,15 +48,25 @@ deal(Shuffled, Player, Opponent, Boneyard) :-
     append(Opponent, Boneyard, Rest).
     
 %% piece_rank(+Piece, -Rank)
-%  Força da peça para decidir quem começa. Toda bucha (dupla) vale mais
-%  que qualquer peça comum; entre bucha, a maior vence; entre peças
-%  comuns, vale a soma dos pontos.
+% Calcula a prioridade de uma peça para definir quem começa.
+%
+% As peças duplas (buchas) recebem uma pontuação acima das demais.
+% Entre duas buchas, a de maior número tem prioridade.
+% Quando não há bucha, a peça com a maior soma de pontos tem prioridade.
+%
+% O corte (!) garante que, ao encontrar uma peça dupla, o Prolog
+% não tente também aplicar a regra destinada às peças comuns.
 piece_rank([A,A], Rank) :- !, Rank is 100 + A.
 piece_rank([A,B], Rank) :- Rank is A + B.
 
-%% starter(+Player, +Opponent, -Turn, -Piece)
-%  Começa quem tem a maior carroça. Se ninguém tiver carroça, começa quem
-%  tem a peça de maior soma. Piece é a peça que abre o jogo.
+%% new_game(-Player, -Opponent, -Boneyard, -Turn, -StartPiece)
+% Reúne todas as etapas necessárias para iniciar uma nova partida:
+% 1. Gera as 28 peças possíveis.
+% 2. Embaralha as peças para definir uma ordem aleatória.
+% 3. Distribui 7 peças para cada jogador e separa o monte.
+% 4. Determina quem começa e qual será a peça inicial.
+%
+% Este é o predicado principal do backend
 starter(Player, Opponent, Turn, Piece) :-
     findall(Rank-(Who-P),
             ( member(Who-Hand, [player-Player, opponent-Opponent]),
