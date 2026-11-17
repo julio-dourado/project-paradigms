@@ -5,7 +5,11 @@
 # 1) Tela em Elm. O Elm só tem binário para Linux x86-64, então esta etapa roda
 #    sempre em amd64; o JavaScript gerado serve para qualquer arquitetura.
 FROM --platform=linux/amd64 node:22-bookworm-slim AS elm
-RUN npm install -g elm@0.19.1-6
+# ca-certificates: o elm baixa os pacotes de package.elm-lang.org por HTTPS.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g elm@0.19.1-6
 WORKDIR /src
 COPY frontend/elm.json ./
 COPY frontend/src ./src
