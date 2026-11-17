@@ -15,6 +15,7 @@ Navegador (Elm)  <--HTTP/JSON-->  FastAPI (Python)  <--janus-->  SWI-Prolog
 - **Prolog** (`backend/prolog/`): toda a lógica do jogo, como distribuir as peças, validar jogadas, comprar, passar a vez, detectar o fim e escolher a jogada do computador.
 - **FastAPI** (`backend/app/`): recebe as requisições do navegador, chama o Prolog pelo [janus](https://www.swi-prolog.org/pldoc/man?section=janus) e devolve JSON (veja [API](#api-fastapi)). Também serve a pasta `frontend/`, então o jogo e a API ficam na mesma origem.
 - **Elm** (`frontend/src/`): a tela do jogo, com a mesa, a mão do jogador e a do oponente. O desenho fica em `View.elm` e `style.css` (veja [Visual](#visual)).
+  A lógica da tela fica em `Main.elm`: seleção de peça e ponta, turnos e mensagens de erro. O `Main` guarda o último estado que o backend confirmou e segue o `turn` dele, sem repetir as regras do Prolog.
 
 ## Representação dos dados
 
@@ -41,35 +42,22 @@ Estado da partida trocado com o frontend:
 }
 ```
 
-## API (FastAPI)
+### Rotas HTTP
 
-O backend fica em `backend/app/` e não guarda nada: o navegador manda o estado inteiro e recebe o estado novo. Quem decide tudo é o Prolog; a API só confere a vez, se a partida acabou e se o estado é um jogo possível (as 28 peças uma vez só, mão e monte em ordem crescente, mesa encostando).
+Proposta da parte 5, já usada pelo `Main.elm` (detalhes em `frontend/src/Api.elm`). Todas são `POST` e o estado vai e volta inteiro: o backend não guarda nada entre uma chamada e outra.
 
-| Rota | Corpo | Predicados | O que faz |
-|---|---|---|---|
-| `POST /api/new-game` | — | `new_game/5` | Partida nova, mesa vazia. `event.start_piece` é a peça de saída. |
-| `POST /api/play` | `{state, piece, side}` | `starter/4`, `play_piece/6` | Jogada do jogador. Com a mesa vazia só entra a peça de saída. |
-| `POST /api/draw` | `{state}` | `playable_pieces/3`, `draw/4` | Compra uma peça. Só vale sem jogada na mão. |
-| `POST /api/pass` | `{state}` | `can_pass/3` | Passa a vez. Só sem jogada e com o monte vazio. |
-| `POST /api/opponent-move` | `{state}` | `draw_until_playable/6`, `choose_move/3` | Vez inteira do computador: compra o que precisar e joga ou passa. |
-| `POST /api/hint` | `{state}` | `hint/4` | `{"hint": {"type": "play", "piece": [2,4], "side": "right"}}`, `{"type": "draw"}` ou `{"type": "pass"}`. |
-| `GET /api/health` | — | | Confere se o Prolog carregou. |
+| Rota | Corpo | Resposta |
+|---|---|---|
+| `/new-game` | vazio | `{"state", "start_piece"}` |
+| `/play` | `{"state", "action"}` | `{"state", "result"}` |
+| `/opponent-move` | `{"state"}` | `{"state", "result"}` |
+| `/hint` | `{"state"}` | `{"hint"}` |
 
-As rotas que mudam a partida respondem sempre no mesmo formato:
-
-```json
-{
-  "state": { "player_hand": [], "opponent_hand": [[3,3]], "table": [[6,5],[5,2]], "boneyard": [], "turn": "opponent" },
-  "event": { "type": "play", "who": "player", "piece": [2,4], "side": "right" },
-  "game_over": { "winner": "player", "points": 6, "reason": "domino" }
-}
-```
-
-- `event.type` é `new_game`, `play`, `draw` ou `pass`; no computador, `event.drawn` lista as peças que ele comprou.
-- `game_over` é `null` enquanto há jogo. `reason` é `domino` (batida) ou `blocked` (jogo trancado).
-- Erros vêm com a mensagem em `detail`: **422** para jogada inválida ou estado impossível, **409** para fora da vez ou partida terminada.
-
-A documentação interativa fica em `http://localhost:8000/docs` com o backend rodando.
+- `action` e `hint` têm o formato do `hint/4`: `[[2,4],"right"]`, `"draw"` ou `"pass"`. Comprar e passar vão pela rota `play`.
+- `start_piece` é a `StartPiece` do `new_game/5`. Com a mesa vazia, a tela só deixa jogar essa peça.
+- `result` é `null` enquanto há jogo e, no fim, `{"winner": "player", "points": 14}` (o `game_over/6`).
+- `opponent-move` faz a vez inteira do computador: compra com `draw_until_playable/6` e joga com `choose_move/3`, ou passa. O `turn` devolvido já é o de quem joga em seguida.
+- Jogada inválida responde HTTP 400 com `{"detail": "frase para o jogador"}`, e a frase aparece na tela.
 
 ## Predicados Prolog
 
@@ -190,6 +178,33 @@ O botão "Passar a vez" fica liberado sempre que é a vez do jogador e a mesa n�
 
 As regras da vitrine são uma cópia em Elm do `domino.pl`, só para testar a tela. No jogo de verdade quem decide é o Prolog.
 
+## Lógica da tela
+
+`frontend/src/Main.elm` liga o visual (`View.elm`) ao backend (`Api.elm`). Ele não repete as regras do Prolog: guarda o último estado que o backend confirmou e segue o `turn` que vem nele.
+
+- **Peça e ponta**: o clique numa peça chega do `View` como `onPlay` (encaixa numa ponta só) ou `onSelect` (encaixa nas duas, e o jogador escolhe a ponta nas sombras). A jogada vai para `/play` como `[Peça, Lado]`, e comprar e passar vão como `"draw"` e `"pass"`.
+- **Turnos**: o jogador só age na vez dele, com a partida em andamento e sem outra requisição pendente (os cliques nesse meio-tempo são ignorados). Quando a vez passa para o computador, a tela mostra "computador pensando" por 0,9 s e chama `/opponent-move`. Se a partida nova começar com o computador, isso acontece logo de cara.
+- **Abertura**: com a mesa vazia, só a `start_piece` do `new-game` pode ser jogada.
+- **Lance a lance**: as frases ("Você jogou 5|2 na ponta direita.", "Computador comprou 2 peças.") e o contorno da última peça saem da diferença entre o estado de antes e o de depois, então o backend só precisa devolver o estado novo. As peças que o computador compra ficam escondidas: só a quantidade aparece.
+- **Fim de jogo**: quando vem `result`, a tela mostra o cartão de batida ou trancado e soma os pontos no placar, que continua de uma partida para a outra.
+- **Mensagens de erro**:
+  - jogada recusada (HTTP 400): aparece a frase do `detail`. Se o backend não mandar frase, a tela explica pela ação ("A 2|3 não encaixa na ponta esquerda.");
+  - servidor fora do ar, demora ou erro 500: a tela avisa e a partida fica como estava;
+  - falha na vez do computador: a tela tenta de novo duas vezes antes de pedir uma partida nova;
+  - respostas que chegam de uma partida antiga são descartadas.
+
+### Backend falso
+
+`frontend/dev/backend-falso.ps1` faz o papel do backend só para testar a tela, sem FastAPI nem Prolog. Ele segue o contrato das [rotas HTTP](#rotas-http), copia as regras do `domino.pl` e também serve os arquivos do frontend. Não precisa instalar nada além do Windows PowerShell.
+
+```powershell
+cd frontend
+elm make src/Main.elm --output=build/main.js
+powershell -ExecutionPolicy Bypass -File dev/backend-falso.ps1
+```
+
+Depois é só abrir `http://localhost:8000`. Para parar, feche a janela. No jogo de verdade quem decide é o Prolog.
+
 ## Como rodar
 
 Requisitos: [SWI-Prolog](https://www.swi-prolog.org/download/stable) 9 ou mais novo, Python 3.10 ou mais novo e, para a tela, [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html) (com Node, dá para instalar com `npm install -g elm@0.19.1-6`).
@@ -229,6 +244,17 @@ Um cenário específico da vitrine abre direto pelo número no endereço, por ex
 
 O jogo completo abre em `frontend/index.html`, que inicia o `Elm.Main` com `flags = { api = "/api" }` (ou `http://localhost:8000/api`, se aberto direto do disco). Enquanto o `Main.elm` não existir, a página mostra um aviso com o link da vitrine.
 
+Tela do jogo (precisa do backend rodando em `http://localhost:8000`):
+
+```bash
+cd frontend
+elm make src/Main.elm --output=build/main.js
+open index.html
+```
+
+Outro endereço de backend vai no próprio link: `index.html?api=http://localhost:9000`. Sem o backend de verdade, dá para usar o [backend falso](#backend-falso).
+
+O backend FastAPI ainda não está no repositório. As instruções dele entram aqui quando for adicionado.
 O relatório do trabalho está em [`RELATORIO.md`](RELATORIO.md).
 
 ## Andamento
@@ -239,7 +265,7 @@ O relatório do trabalho está em [`RELATORIO.md`](RELATORIO.md).
 | 2. Prolog: jogadas | Guga | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 3. Prolog: fim de jogo e adversário | Pedro Luiz | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
-| 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm` | ⏳ pendente |
+| 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm`, `index.html`, `dev/backend-falso.ps1` | ✅ pronto |
 | 6. Elm: visual | Patrick Anderson Carvalho dos Santos | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
 | 7. Integração e documentação | Julio Cesar Almeida Dourado | `backend/app/`, `backend/tests/`, `Makefile`, `frontend/index.html`, `RELATORIO.md` | ✅ pronto |
 

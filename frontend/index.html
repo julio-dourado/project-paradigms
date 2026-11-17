@@ -9,20 +9,11 @@
 </head>
 <body>
   <div id="app"></div>
-  <!-- Gerado por `make build` (elm make src/Main.elm --output=build/main.js). -->
   <script src="build/main.js"></script>
   <script>
-    // Aberto pelo FastAPI (`make run`), a API fica na mesma origem.
-    // Aberto de outro lugar, aponta para o backend local.
-    var api = location.protocol === "file:" ? "http://localhost:8000/api" : "/api";
-    if (window.Elm && Elm.Main) {
-      Elm.Main.init({ node: document.getElementById("app"), flags: { api: api } });
-    } else {
-      document.getElementById("app").innerHTML =
-        '<p style="padding:2rem;font-family:sans-serif">O jogo ainda não foi compilado. ' +
-        'Rode <code>make build</code> (precisa do <code>src/Main.elm</code>) ' +
-        'ou veja a vitrine em <a href="preview.html">preview.html</a>.</p>';
-    }
+    // O endereço do backend pode vir no endereço da página: index.html?api=http://localhost:9000
+    var api = new URLSearchParams(location.search).get("api");
+    Elm.Main.init({ node: document.getElementById("app"), flags: api });
   </script>
 </body>
 </html>
