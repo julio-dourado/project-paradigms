@@ -31,7 +31,11 @@
     draw/4,            % +Boneyard, +Hand, -NewBoneyard, -NewHand
     draw_until_playable/6, % +Hand, +Table, +Boneyard, -NewHand, -NewBoneyard, -Drawn
     can_pass/3,        % +Hand, +Table, +Boneyard
-    next_turn/2        % +Turn, -Next
+    next_turn/2,       % +Turn, -Next
+    domino_out/1,      % +Hand
+    blocked/4,         % +Player, +Opponent, +Table, +Boneyard
+    hand_points/2,     % +Hand, -Points
+    game_over/6        % +Player, +Opponent, +Table, +Boneyard, -Winner, -Points
 ]).
 
 :- use_module(library(lists)).
@@ -188,3 +192,52 @@ can_pass(Hand, Table, []) :-
 % Alterna a vez entre o jogador e o computador.
 next_turn(player, opponent).
 next_turn(opponent, player).
+
+
+% ======================================================================
+% Fim de jogo
+% ======================================================================
+
+%% domino_out(+Hand)
+% Verdadeiro se o jogador bateu, ou seja, jogou todas as peças.
+domino_out([]).
+
+%% blocked(+Player, +Opponent, +Table, +Boneyard)
+% Verdadeiro se o jogo trancou: o monte acabou e nenhum dos
+% dois jogadores tem peça que encaixe na mesa.
+blocked(Player, Opponent, Table, []) :-
+    Table \== [],
+    can_pass(Player, Table, []),
+    can_pass(Opponent, Table, []).
+
+%% hand_points(+Hand, -Points)
+% Soma os pontos de todas as peças da mão.
+hand_points(Hand, Points) :-
+    findall(S, ( member([A,B], Hand), S is A + B ), Sums),
+    sum_list(Sums, Points).
+
+%% game_over(+Player, +Opponent, +Table, +Boneyard, -Winner, -Points)
+% Verdadeiro se a partida acabou. Falha enquanto ainda há jogo.
+%
+% Winner é player, opponent ou draw (empate).
+% Points é quanto o vencedor marca: a soma das peças que sobraram
+% na mão do perdedor. No empate ninguém marca.
+%
+% - Batida: vence quem ficou sem peças.
+% - Trancado: vence quem tem menos pontos na mão; com a mesma
+%   soma, dá empate.
+game_over([], Opponent, _, _, player, Points) :- !,
+    hand_points(Opponent, Points).
+game_over(Player, [], _, _, opponent, Points) :- !,
+    hand_points(Player, Points).
+game_over(Player, Opponent, Table, Boneyard, Winner, Points) :-
+    blocked(Player, Opponent, Table, Boneyard),
+    hand_points(Player, PP),
+    hand_points(Opponent, OP),
+    compare(Order, PP, OP),
+    blocked_result(Order, PP, OP, Winner, Points).
+
+% No trancado, quem tem menos pontos vence e marca os pontos do outro.
+blocked_result(<, _, OP, player, OP).
+blocked_result(>, PP, _, opponent, PP).
+blocked_result(=, _, _, draw, 0).

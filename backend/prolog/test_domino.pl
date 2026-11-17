@@ -210,3 +210,60 @@ rodadas(Turn, Mao, Outra, Mesa, Monte, Passes, Final) :-
         P1 is Passes + 1,
         rodadas(Next, Outra, Mao1, Mesa, Monte1, P1, Final)
     ).
+
+:- begin_tests(fim_de_jogo).
+
+test(bateu) :-
+    domino_out([]).
+
+test(nao_bateu, [fail]) :-
+    domino_out([[1,2]]).
+
+test(pontos_da_mao) :-
+    hand_points([[1,2],[6,6],[0,0]], P),
+    P == 15.
+
+test(pontos_mao_vazia) :-
+    hand_points([], P),
+    P == 0.
+
+test(jogo_trancado) :-
+    blocked([[0,0]], [[1,1]], [[6,5],[5,6]], []).
+
+test(nao_tranca_com_monte, [fail]) :-
+    blocked([[0,0]], [[1,1]], [[6,5],[5,6]], [[2,3]]).
+
+test(nao_tranca_se_alguem_joga, [fail]) :-
+    blocked([[0,0]], [[1,6]], [[6,5],[5,6]], []).
+
+test(nao_tranca_mesa_vazia, [fail]) :-
+    blocked([[0,0]], [[1,1]], [], []).
+
+test(jogador_bateu) :-
+    game_over([], [[3,4],[1,1]], [[2,2]], [[5,5]], W, P),
+    W == player, P == 9.
+
+test(oponente_bateu) :-
+    game_over([[6,6]], [], [[2,2]], [], W, P),
+    W == opponent, P == 12.
+
+test(batida_contra_mao_so_com_zero) :-
+    game_over([], [[0,0]], [[2,2]], [], W, P),
+    W == player, P == 0.
+
+test(trancado_vence_menor_soma) :-
+    game_over([[0,1]], [[2,3]], [[6,5],[5,6]], [], W, P),
+    W == player, P == 5.
+
+test(trancado_oponente_vence) :-
+    game_over([[4,4]], [[0,0],[1,2]], [[6,5],[5,6]], [], W, P),
+    W == opponent, P == 8.
+
+test(trancado_empate) :-
+    game_over([[1,2]], [[0,3]], [[6,5],[5,6]], [], W, P),
+    W == draw, P == 0.
+
+test(partida_em_andamento, [fail]) :-
+    game_over([[1,2]], [[0,3]], [[6,1]], [[4,4]], _, _).
+
+:- end_tests(fim_de_jogo).
