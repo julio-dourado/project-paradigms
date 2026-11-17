@@ -195,7 +195,7 @@ O backend FastAPI e a tela completa (`Main.elm`) ainda não estão no repositór
 | 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
 | 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm` | ⏳ pendente |
 | 6. Elm: visual | Patrick Anderson Carvalho dos Santos | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
-| 7. Integração e documentação | — | `backend/app/`, `Makefile`, `RELATORIO.md` | ⏳ pendente |
+| 7. Integração e documentação | Julio Cesar Almeida Dourado | `backend/app/`, `Makefile`, `RELATORIO.md` | ⏳ pendente |
 
 ## Prazos
 
