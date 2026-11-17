@@ -13,7 +13,7 @@ Navegador (Elm)  <--HTTP/JSON-->  FastAPI (Python)  <--janus-->  SWI-Prolog
 ```
 
 - **Prolog** (`backend/prolog/`): toda a lógica do jogo, como distribuir as peças, validar jogadas, comprar, passar a vez, detectar o fim e escolher a jogada do computador.
-- **FastAPI** (`backend/app/`): recebe as requisições do navegador, chama o Prolog pelo [janus](https://www.swi-prolog.org/pldoc/man?section=janus) e devolve JSON.
+- **FastAPI** (`backend/app/`): recebe as requisições do navegador, chama o Prolog pelo [janus](https://www.swi-prolog.org/pldoc/man?section=janus) e devolve JSON (veja [API](#api-fastapi)). Também serve a pasta `frontend/`, então o jogo e a API ficam na mesma origem.
 - **Elm** (`frontend/src/`): a tela do jogo, com a mesa, a mão do jogador e a do oponente. O desenho fica em `View.elm` e `style.css` (veja [Visual](#visual)).
 
 ## Representação dos dados
@@ -41,7 +41,35 @@ Estado da partida trocado com o frontend:
 }
 ```
 
-Rotas previstas: `new-game`, `play`, `opponent-move` e `hint`.
+## API (FastAPI)
+
+O backend fica em `backend/app/` e não guarda nada: o navegador manda o estado inteiro e recebe o estado novo. Quem decide tudo é o Prolog; a API só confere a vez, se a partida acabou e se o estado é um jogo possível (as 28 peças uma vez só, mão e monte em ordem crescente, mesa encostando).
+
+| Rota | Corpo | Predicados | O que faz |
+|---|---|---|---|
+| `POST /api/new-game` | — | `new_game/5` | Partida nova, mesa vazia. `event.start_piece` é a peça de saída. |
+| `POST /api/play` | `{state, piece, side}` | `starter/4`, `play_piece/6` | Jogada do jogador. Com a mesa vazia só entra a peça de saída. |
+| `POST /api/draw` | `{state}` | `playable_pieces/3`, `draw/4` | Compra uma peça. Só vale sem jogada na mão. |
+| `POST /api/pass` | `{state}` | `can_pass/3` | Passa a vez. Só sem jogada e com o monte vazio. |
+| `POST /api/opponent-move` | `{state}` | `draw_until_playable/6`, `choose_move/3` | Vez inteira do computador: compra o que precisar e joga ou passa. |
+| `POST /api/hint` | `{state}` | `hint/4` | `{"hint": {"type": "play", "piece": [2,4], "side": "right"}}`, `{"type": "draw"}` ou `{"type": "pass"}`. |
+| `GET /api/health` | — | | Confere se o Prolog carregou. |
+
+As rotas que mudam a partida respondem sempre no mesmo formato:
+
+```json
+{
+  "state": { "player_hand": [], "opponent_hand": [[3,3]], "table": [[6,5],[5,2]], "boneyard": [], "turn": "opponent" },
+  "event": { "type": "play", "who": "player", "piece": [2,4], "side": "right" },
+  "game_over": { "winner": "player", "points": 6, "reason": "domino" }
+}
+```
+
+- `event.type` é `new_game`, `play`, `draw` ou `pass`; no computador, `event.drawn` lista as peças que ele comprou.
+- `game_over` é `null` enquanto há jogo. `reason` é `domino` (batida) ou `blocked` (jogo trancado).
+- Erros vêm com a mensagem em `detail`: **422** para jogada inválida ou estado impossível, **409** para fora da vez ou partida terminada.
+
+A documentação interativa fica em `http://localhost:8000/docs` com o backend rodando.
 
 ## Predicados Prolog
 
@@ -147,7 +175,7 @@ type alias Config msg =
 
 No `Main.elm` basta converter o modelo para `Props` e chamar `View.view config (toProps model)`. O visual só usa as pontas da mesa (e a `opening`, com a mesa vazia) para destacar peças e desenhar as sombras: quem valida a jogada é o Prolog.
 
-O botão "Passar a vez" fica liberado sempre que é a vez do jogador e a mesa não está vazia, mesmo tendo peça. Ele só fica em destaque quando não há outra saída. Para isso valer no jogo de verdade, o backend precisa aceitar o passe com peça: hoje o `can_pass/3` só deixa passar sem jogada e com o monte vazio.
+O botão "Passar a vez" fica liberado sempre que é a vez do jogador e a mesa não está vazia, mesmo tendo peça. Ele só fica em destaque quando não há outra saída. No jogo de verdade a API segue o `can_pass/3`: o passe com peça na mão ou com monte é recusado (422) com uma mensagem dizendo o motivo, que a tela mostra em `error`.
 
 ### Vitrine
 
@@ -164,16 +192,32 @@ As regras da vitrine são uma cópia em Elm do `domino.pl`, só para testar a te
 
 ## Como rodar
 
-Requisito: [SWI-Prolog](https://www.swi-prolog.org/download/stable) 9 ou mais novo.
+Requisitos: [SWI-Prolog](https://www.swi-prolog.org/download/stable) 9 ou mais novo, Python 3.10 ou mais novo e, para a tela, [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html) (com Node, dá para instalar com `npm install -g elm@0.19.1-6`).
 
-Testes do Prolog:
+O `Makefile` na raiz junta tudo:
+
+| Comando | O que faz |
+|---|---|
+| `make install` | Cria `backend/.venv` com FastAPI e janus. |
+| `make test` | Testes do Prolog (`test-prolog`) e da API (`test-api`). |
+| `make build` | Compila o Elm: o jogo (`build/main.js`, quando o `Main.elm` existir) e a vitrine (`build/preview.js`). |
+| `make run` | Sobe o backend em `http://localhost:8000`: a API em `/api`, o jogo em `/` e a vitrine em `/preview.html`. |
+| `make preview` | Compila e abre a vitrine, sem backend. |
+
+Sem `make`, os comandos equivalentes:
 
 ```bash
 cd backend/prolog
 swipl -g "consult(test_domino), (run_tests -> halt(0) ; halt(1))"
 ```
 
-Vitrine do visual (precisa do [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html); com Node, dá para instalar com `npm install -g elm@0.19.1-6`):
+```bash
+cd backend
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+.venv/bin/python -m pytest
+.venv/bin/uvicorn app.main:app --reload
+```
 
 ```bash
 cd frontend
@@ -181,9 +225,11 @@ elm make src/Preview.elm --output=build/preview.js
 open preview.html
 ```
 
-Um cenário específico abre direto pelo número no endereço, por exemplo `preview.html#6` para a mesa longa.
+Um cenário específico da vitrine abre direto pelo número no endereço, por exemplo `preview.html#6` para a mesa longa.
 
-O backend FastAPI e a tela completa (`Main.elm`) ainda não estão no repositório. As instruções deles entram aqui quando forem adicionados.
+O jogo completo abre em `frontend/index.html`, que inicia o `Elm.Main` com `flags = { api = "/api" }` (ou `http://localhost:8000/api`, se aberto direto do disco). Enquanto o `Main.elm` não existir, a página mostra um aviso com o link da vitrine.
+
+O relatório do trabalho está em [`RELATORIO.md`](RELATORIO.md).
 
 ## Andamento
 
@@ -195,7 +241,7 @@ O backend FastAPI e a tela completa (`Main.elm`) ainda não estão no repositór
 | 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
 | 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm` | ⏳ pendente |
 | 6. Elm: visual | Patrick Anderson Carvalho dos Santos | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
-| 7. Integração e documentação | — | `backend/app/`, `Makefile`, `RELATORIO.md` | ⏳ pendente |
+| 7. Integração e documentação | Julio Cesar Almeida Dourado | `backend/app/`, `backend/tests/`, `Makefile`, `frontend/index.html`, `RELATORIO.md` | ✅ pronto |
 
 ## Prazos
 

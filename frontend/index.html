@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dominó</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <!-- Gerado por `make build` (elm make src/Main.elm --output=build/main.js). -->
+  <script src="build/main.js"></script>
+  <script>
+    // Aberto pelo FastAPI (`make run`), a API fica na mesma origem.
+    // Aberto de outro lugar, aponta para o backend local.
+    var api = location.protocol === "file:" ? "http://localhost:8000/api" : "/api";
+    if (window.Elm && Elm.Main) {
+      Elm.Main.init({ node: document.getElementById("app"), flags: { api: api } });
+    } else {
+      document.getElementById("app").innerHTML =
+        '<p style="padding:2rem;font-family:sans-serif">O jogo ainda não foi compilado. ' +
+        'Rode <code>make build</code> (precisa do <code>src/Main.elm</code>) ' +
+        'ou veja a vitrine em <a href="preview.html">preview.html</a>.</p>';
+    }
+  </script>
+</body>
+</html>
