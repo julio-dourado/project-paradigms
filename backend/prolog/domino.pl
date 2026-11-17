@@ -11,7 +11,8 @@
 :- module(domino, [
     all_pieces/1,      % -Pieces
     shuffle/2,           % +Pieces, -Shuffled
-    deal/4             % +Shuffled, -Player, -Opponent, -Boneyard
+    deal/4,             % +Shuffled, -Player, -Opponent, -Boneyard
+    piece_rank/2       % +Piece, -Rank
 ]).
 
 :- use_module(library(lists)).
@@ -37,3 +38,10 @@ deal(Shuffled, Player, Opponent, Boneyard) :-
     length(Opponent, 7),
     append(Player, Rest, Shuffled),
     append(Opponent, Boneyard, Rest).
+    
+%% piece_rank(+Piece, -Rank)
+%  Força da peça para decidir quem começa. Toda bucha (dupla) vale mais
+%  que qualquer peça comum; entre bucha, a maior vence; entre peças
+%  comuns, vale a soma dos pontos.
+piece_rank([A,A], Rank) :- !, Rank is 100 + A.
+piece_rank([A,B], Rank) :- Rank is A + B.

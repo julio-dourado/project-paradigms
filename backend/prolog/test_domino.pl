@@ -35,5 +35,9 @@ test(deal_nao_perde_nem_duplica) :-
     append([P, O, B], Todas),
     msort(Todas, Sorted),
     msort(Ps, Sorted).
+    
+test(rank_bucha_vence_peca_comum) :-
+    piece_rank([0,0], C), piece_rank([5,6], N),
+    C > N.
 
 :- end_tests(domino).
