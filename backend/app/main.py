@@ -12,28 +12,35 @@ formato descrito no README:
       "turn":          "player"
     }
 
+As rotas seguem o contrato da tela (``frontend/src/Api.elm``) e respondem
+tanto na raiz (``/new-game``) quanto em ``/api`` (``/api/new-game``).
 Toda resposta que muda a partida tem o mesmo formato:
 
-    {"state": {...}, "event": {...}, "game_over": null | {...}}
+    {"state": {...}, "result": null | {...}, "event": {...}, "game_over": null | {...}}
 
-- ``event`` conta o que aconteceu (quem jogou, qual peça, o que comprou),
-  para a tela montar o lance a lance;
-- ``game_over`` vem preenchido quando a partida acaba
-  (``winner``, ``points`` e ``reason``: ``domino`` na batida ou
-  ``blocked`` no jogo trancado).
+- ``result`` é o ``game_over/6``: ``{"winner": "player", "points": 14}``,
+  ou ``null`` enquanto há jogo. É o campo que a tela usa;
+- ``event`` conta o que aconteceu (quem jogou, qual peça, o que comprou);
+- ``game_over`` é o ``result`` com ``reason``: ``domino`` na batida ou
+  ``blocked`` no jogo trancado.
 
 Quem decide se a jogada vale, quem ganhou e o que o computador joga é o
 Prolog (``app/prolog.py``). Aqui só ficam as checagens de protocolo:
 se é a vez certa, se a partida já acabou e se o estado recebido é um
 jogo de dominó possível.
+
+Erros: 400 quando a jogada não vale (com a frase em ``detail``), 409
+quando não é a vez de quem pediu ou a partida já acabou, e 422 quando o
+corpo da requisição não é um estado possível.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
@@ -81,19 +88,34 @@ class StateRequest(BaseModel):
 
 
 class PlayRequest(BaseModel):
+    """Jogada do jogador.
+
+    Formato da tela: ``action`` igual ao ``hint/4`` (``[[2,4], "right"]``,
+    ``"draw"`` ou ``"pass"``). Também aceita ``piece`` + ``side``.
+    """
+
     state: GameState
-    piece: Piece
-    side: Side
+    action: tuple[Piece, Side] | Literal["draw", "pass"] | None = None
+    piece: Piece | None = None
+    side: Side | None = None
+
+    @model_validator(mode="after")
+    def _one_action(self) -> "PlayRequest":
+        if self.action is None and (self.piece is None or self.side is None):
+            raise ValueError("mande action ([peça, lado], draw ou pass) ou piece + side")
+        return self
 
 
 app = FastAPI(
     title="Dominó em Prolog + Elm",
     description="Ponte HTTP/JSON entre a tela em Elm e as regras em SWI-Prolog (via janus).",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 # Liberado para o `elm reactor` e servidores de desenvolvimento em outras portas.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+router = APIRouter()
 
 
 # ----------------------------------------------------------------------
@@ -111,7 +133,9 @@ def _game_over(state: GameState) -> dict[str, Any] | None:
 
 
 def _response(state: GameState, event: dict[str, Any]) -> dict[str, Any]:
-    return {"state": state.model_dump(), "event": event, "game_over": _game_over(state)}
+    over = _game_over(state)
+    result = None if over is None else {"winner": over["winner"], "points": over["points"]}
+    return {"state": state.model_dump(), "result": result, "event": event, "game_over": over}
 
 
 def _check_turn(state: GameState, who: str) -> None:
@@ -133,13 +157,13 @@ def _opening(state: GameState) -> list[int] | None:
 
 
 def _play(state: GameState, who: str, piece: list[int], side: str) -> GameState:
-    """Joga a peça pelo Prolog e passa a vez. Erro 422 se a jogada não vale."""
+    """Joga a peça pelo Prolog e passa a vez. Erro 400 se a jogada não vale."""
     opening = _opening(state)
     if opening is not None and sorted(piece) != opening:
-        raise HTTPException(422, f"A partida abre com a peça {opening}.")
+        raise HTTPException(400, f"A partida abre com a peça {opening}.")
     result = prolog.play_piece(piece, side, state.hand(who), state.table)
     if result is None:
-        raise HTTPException(422, "Jogada inválida: a peça não está na mão ou não encaixa nessa ponta.")
+        raise HTTPException(400, "Jogada inválida: a peça não está na mão ou não encaixa nessa ponta.")
     new_hand, new_table = result
     data = state.model_dump()
     data["player_hand" if who == "player" else "opponent_hand"] = new_hand
@@ -148,19 +172,43 @@ def _play(state: GameState, who: str, piece: list[int], side: str) -> GameState:
     return GameState.model_validate(data)
 
 
+def _player_draw(state: GameState) -> dict[str, Any]:
+    """O jogador compra uma peça (``draw/4``). Só vale sem jogada na mão."""
+    _check_turn(state, "player")
+    if prolog.playable_pieces(state.player_hand, state.table):
+        raise HTTPException(400, "Você ainda tem peça que encaixa: não precisa comprar.")
+    result = prolog.draw(state.boneyard, state.player_hand)
+    if result is None:
+        raise HTTPException(400, "O monte acabou: passe a vez.")
+    boneyard, hand = result
+    new_state = state.model_copy(update={"player_hand": hand, "boneyard": boneyard})
+    return _response(new_state, {"type": "draw", "who": "player", "pieces": [hand[-1]]})
+
+
+def _player_pass(state: GameState) -> dict[str, Any]:
+    """O jogador passa a vez (``can_pass/3``): só sem jogada e com o monte vazio."""
+    _check_turn(state, "player")
+    if not prolog.can_pass(state.player_hand, state.table, state.boneyard):
+        if prolog.playable_pieces(state.player_hand, state.table):
+            raise HTTPException(400, "Você ainda tem peça que encaixa.")
+        raise HTTPException(400, "Ainda dá para comprar do monte.")
+    new_state = state.model_copy(update={"turn": prolog.next_turn("player")})
+    return _response(new_state, {"type": "pass", "who": "player"})
+
+
 # ----------------------------------------------------------------------
 # Rotas
 # ----------------------------------------------------------------------
 
 
-@app.get("/api/health")
+@router.get("/health")
 def health() -> dict[str, str]:
     """Confere se o Prolog carregou."""
     prolog.next_turn("player")
     return {"status": "ok"}
 
 
-@app.post("/api/new-game")
+@router.post("/new-game")
 def new_game() -> dict[str, Any]:
     """Partida nova (``new_game/5``). A mesa começa vazia; quem tem a vez abre com ``start_piece``."""
     g = prolog.new_game()
@@ -171,46 +219,37 @@ def new_game() -> dict[str, Any]:
         boneyard=g["boneyard"],
         turn=g["turn"],
     )
-    return _response(state, {"type": "new_game", "turn": g["turn"], "start_piece": g["start_piece"]})
+    response = _response(state, {"type": "new_game", "turn": g["turn"], "start_piece": g["start_piece"]})
+    response["start_piece"] = g["start_piece"]
+    return response
 
 
-@app.post("/api/play")
+@router.post("/play")
 def play(req: PlayRequest) -> dict[str, Any]:
-    """Jogada do jogador (``play_piece/6``)."""
+    """Vez do jogador: joga uma peça (``play_piece/6``), compra (``draw``) ou passa (``pass``)."""
+    if req.action == "draw":
+        return _player_draw(req.state)
+    if req.action == "pass":
+        return _player_pass(req.state)
+    piece, side = (list(req.action[0]), req.action[1]) if req.action else (req.piece, req.side)
     _check_turn(req.state, "player")
-    state = _play(req.state, "player", req.piece, req.side)
-    return _response(state, {"type": "play", "who": "player", "piece": sorted(req.piece), "side": req.side})
+    state = _play(req.state, "player", piece, side)
+    return _response(state, {"type": "play", "who": "player", "piece": sorted(piece), "side": side})
 
 
-@app.post("/api/draw")
+@router.post("/draw")
 def draw(req: StateRequest) -> dict[str, Any]:
-    """O jogador compra uma peça (``draw/4``). Só vale sem jogada na mão."""
-    state = req.state
-    _check_turn(state, "player")
-    if prolog.playable_pieces(state.player_hand, state.table):
-        raise HTTPException(422, "Você ainda tem peça que encaixa: não precisa comprar.")
-    result = prolog.draw(state.boneyard, state.player_hand)
-    if result is None:
-        raise HTTPException(422, "O monte acabou: passe a vez.")
-    boneyard, hand = result
-    new_state = state.model_copy(update={"player_hand": hand, "boneyard": boneyard})
-    return _response(new_state, {"type": "draw", "who": "player", "pieces": [hand[-1]]})
+    """O mesmo que ``/play`` com ``"action": "draw"``."""
+    return _player_draw(req.state)
 
 
-@app.post("/api/pass")
+@router.post("/pass")
 def pass_turn(req: StateRequest) -> dict[str, Any]:
-    """O jogador passa a vez (``can_pass/3``): só sem jogada e com o monte vazio."""
-    state = req.state
-    _check_turn(state, "player")
-    if not prolog.can_pass(state.player_hand, state.table, state.boneyard):
-        if prolog.playable_pieces(state.player_hand, state.table):
-            raise HTTPException(422, "Você ainda tem peça que encaixa.")
-        raise HTTPException(422, "Ainda dá para comprar do monte.")
-    new_state = state.model_copy(update={"turn": prolog.next_turn("player")})
-    return _response(new_state, {"type": "pass", "who": "player"})
+    """O mesmo que ``/play`` com ``"action": "pass"``."""
+    return _player_pass(req.state)
 
 
-@app.post("/api/opponent-move")
+@router.post("/opponent-move")
 def opponent_move(req: StateRequest) -> dict[str, Any]:
     """Vez do computador, inteira de uma vez.
 
@@ -239,22 +278,27 @@ def opponent_move(req: StateRequest) -> dict[str, Any]:
     return _response(new_state, {"type": "play", "who": "opponent", "piece": piece, "side": side, "drawn": drawn})
 
 
-@app.post("/api/hint")
+@router.post("/hint")
 def hint(req: StateRequest) -> dict[str, Any]:
-    """Dica para o jogador (``hint/4``).
+    """Dica para o jogador, no formato do ``hint/4``.
 
-    Devolve ``{"type": "play", "piece": [2,4], "side": "right"}``,
-    ``{"type": "draw"}`` ou ``{"type": "pass"}``.
+    ``{"hint": [[2,4], "right"]}``, ``{"hint": "draw"}`` ou ``{"hint": "pass"}``.
     """
     state = req.state
     _check_turn(state, "player")
     opening = _opening(state)
     if opening is not None:
-        return {"hint": {"type": "play", "piece": opening, "side": "right"}}
+        return {"hint": [opening, "right"]}
     h = prolog.hint(state.player_hand, state.table, state.boneyard)
     if isinstance(h, tuple):
-        return {"hint": {"type": "play", "piece": h[0], "side": h[1]}}
-    return {"hint": {"type": h}}
+        return {"hint": [h[0], h[1]]}
+    return {"hint": h}
+
+
+# A tela chama as rotas na raiz (o endereço do backend + "/new-game");
+# /api fica como alternativa para quem prefere separar a API dos arquivos.
+app.include_router(router)
+app.include_router(router, prefix="/api")
 
 
 # ----------------------------------------------------------------------
@@ -263,6 +307,7 @@ def hint(req: StateRequest) -> dict[str, Any]:
 
 # Serve a pasta `frontend/` na raiz, para o jogo e a API ficarem na mesma
 # origem: http://localhost:8000/ abre o jogo e /preview.html a vitrine.
-FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+# Na imagem Docker a pasta vem da variável FRONTEND_DIR.
+FRONTEND_DIR = Path(os.environ.get("FRONTEND_DIR", Path(__file__).resolve().parents[2] / "frontend"))
 if FRONTEND_DIR.is_dir():
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
