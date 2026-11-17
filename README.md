@@ -14,7 +14,7 @@ Navegador (Elm)  <--HTTP/JSON-->  FastAPI (Python)  <--janus-->  SWI-Prolog
 
 - **Prolog** (`backend/prolog/`): toda a lógica do jogo, como distribuir as peças, validar jogadas, comprar, passar a vez, detectar o fim e escolher a jogada do computador.
 - **FastAPI** (`backend/app/`): recebe as requisições do navegador, chama o Prolog pelo [janus](https://www.swi-prolog.org/pldoc/man?section=janus) e devolve JSON.
-- **Elm** (`frontend/src/`): a tela do jogo, com a mesa, a mão do jogador e a do oponente.
+- **Elm** (`frontend/src/`): a tela do jogo, com a mesa, a mão do jogador e a do oponente. O desenho fica em `View.elm` e `style.css` (veja [Visual](#visual)).
 
 ## Representação dos dados
 
@@ -102,6 +102,54 @@ Hand = [],
 Table = [[6,5],[5,2],[2,0]].
 ```
 
+## Visual
+
+![Vitrine do visual: mesa de feltro com a cadeia de peças, a mão do jogador em leque e a dica destacada](frontend/assets/vitrine.jpg)
+
+Conceito: **mesa de praça**. Feltro verde com borda de madeira, peças de marfim com pino de latão e luz quente vindo de cima. Nenhuma imagem é baixada: todas as peças (frente, costas, monte e logo) são SVG desenhado pelo próprio `View.elm`.
+
+- **Cadeia em "cobra"**: a mesa vira fileiras que alternam de direção. Na virada, duas peças descem em pé, e as buchas ficam atravessadas, como numa mesa de verdade. Quando a mesa muda, as peças deslizam até o lugar novo, e a última jogada ganha um contorno dourado.
+- **Escolha da ponta**: se a peça encaixa só numa ponta, um clique já joga. Se encaixa nas duas, aparecem "sombras" tracejadas onde ela pode entrar (e botões `◀ Ponta 6` / `Ponta 1 ▶` para quem usa teclado).
+- **Mãos em leque**: as peças jogáveis sobem um pouco e as que não encaixam ficam apagadas. A mão do computador fica virada para baixo e só é revelada no fim, peça por peça.
+- **Dica**: a peça, a ponta, o monte ou o botão de passar sugeridos pelo `hint/4` pulsam em dourado, com a frase da dica embaixo.
+- **Fim de jogo**: um cartão diz se foi batida ou jogo trancado, os pontos e o que sobrou em cada mão. Na vitória, chovem pecinhas.
+- Funciona no celular, com uma cobra mais estreita, e respeita `prefers-reduced-motion`.
+
+### Contrato com a lógica da tela
+
+`View.elm` não importa `Domino` nem `Main`. Ele recebe tudo pronto em `View.Props` e devolve as ações pelas funções de `View.Config`:
+
+```elm
+type alias Props =
+    { playerHand : List Piece          -- Piece = ( Int, Int ), como [3,5]
+    , opponentHand : List Piece        -- desenhada virada; revelada no fim
+    , table : List Piece               -- mesma ordem do backend
+    , boneyard : Int                   -- quantas peças no monte
+    , status : Status                  -- Loading | PlayerTurn | OpponentTurn | Finished Winner Int
+    , selected : Maybe Piece
+    , hint : Maybe Hint                -- PlayHint Piece End | DrawHint | PassHint
+    , lastPlayed : Maybe Piece
+    , log : List String                -- lance a lance, o mais novo primeiro
+    , score : { player : Int, opponent : Int }
+    , error : Maybe String
+    }
+
+type alias Config msg =
+    { onSelect : Maybe Piece -> msg    -- Nothing desfaz a seleção
+    , onPlay : Piece -> End -> msg     -- End = LeftEnd | RightEnd (left / right)
+    , onDraw : msg
+    , onPass : msg
+    , onHint : msg
+    , onNewGame : msg
+    }
+```
+
+No `Main.elm` basta converter o modelo para `Props` e chamar `View.view config (toProps model)`. O visual só usa as pontas da mesa para destacar peças e desenhar as sombras: quem valida a jogada é o Prolog.
+
+### Vitrine
+
+`frontend/src/Preview.elm` mostra o visual em 12 cenários (início, meio de jogo, escolher a ponta, dica, sem jogada, computador pensando, mesa longa, vitória, derrota, empate, carregando e erro de rede) sem precisar do backend. Dá para clicar, escolher a ponta, comprar e pedir dica, mas o computador não joga.
+
 ## Como rodar
 
 Requisito: [SWI-Prolog](https://www.swi-prolog.org/download/stable) 9 ou mais novo.
@@ -113,7 +161,17 @@ cd backend/prolog
 swipl -g "consult(test_domino), (run_tests -> halt(0) ; halt(1))"
 ```
 
-O backend FastAPI e o frontend Elm ainda não estão no repositório. As instruções deles entram aqui quando forem adicionados.
+Vitrine do visual (precisa do [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html)):
+
+```bash
+cd frontend
+elm make src/Preview.elm --output=build/preview.js
+open preview.html
+```
+
+Um cenário específico abre direto pelo número no endereço, por exemplo `preview.html#6` para a mesa longa.
+
+O backend FastAPI e a tela completa (`Main.elm`) ainda não estão no repositório. As instruções deles entram aqui quando forem adicionados.
 
 ## Andamento
 
@@ -124,7 +182,7 @@ O backend FastAPI e o frontend Elm ainda não estão no repositório. As instru�
 | 3. Prolog: fim de jogo e adversário | Pedro Luiz | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
 | 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm` | ⏳ pendente |
-| 6. Elm: visual | — | `frontend/src/View.elm`, `style.css` | ⏳ pendente |
+| 6. Elm: visual | Patrick | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
 | 7. Integração e documentação | — | `backend/app/`, `Makefile`, `RELATORIO.md` | ⏳ pendente |
 
 ## Prazos

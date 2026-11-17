@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Dominó</title>
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fffaf0"/><stop offset="55%" stop-color="#f2e9d6"/><stop offset="100%" stop-color="#dccfb2"/>
+    </linearGradient>
+    <linearGradient id="back" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7a2a37"/><stop offset="100%" stop-color="#3f121b"/>
+    </linearGradient>
+    <radialGradient id="pin" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#fff3c8"/><stop offset="45%" stop-color="#d6af58"/><stop offset="100%" stop-color="#7a5a1c"/>
+    </radialGradient>
+  </defs>
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="#1f5c47"/>
+  <g transform="translate(25 33) rotate(-24) scale(0.22) translate(-50 -100)">
+    <rect x="2" y="2" width="96" height="196" rx="14" fill="url(#back)" stroke="#2a0b11" stroke-width="3"/>
+    <path d="M50 66 L70 100 L50 134 L30 100 Z" fill="none" stroke="#d2ac58" stroke-width="4"/>
+    <circle cx="50" cy="100" r="7" fill="url(#pin)"/>
+  </g>
+  <g transform="translate(37 31) rotate(14) scale(0.22) translate(-50 -100)" fill="#1c1712">
+    <rect x="2" y="2" width="96" height="196" rx="14" fill="url(#face)" stroke="#c9b994" stroke-width="3"/>
+    <line x1="16" y1="100" x2="84" y2="100" stroke="#a8977a" stroke-width="4"/>
+    <circle cx="28" cy="28" r="9.5"/><circle cx="72" cy="28" r="9.5"/>
+    <circle cx="28" cy="50" r="9.5"/><circle cx="72" cy="50" r="9.5"/>
+    <circle cx="28" cy="72" r="9.5"/><circle cx="72" cy="72" r="9.5"/>
+    <circle cx="72" cy="128" r="9.5"/><circle cx="50" cy="150" r="9.5"/><circle cx="28" cy="172" r="9.5"/>
+    <circle cx="50" cy="100" r="6" fill="url(#pin)"/>
+  </g>
+</svg>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dominó · vitrine do visual</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Só da vitrine: a barra de cenários. Não vai para o jogo. */
+    .vitrine {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      max-width: 1280px; margin: 0 auto; padding: 12px 24px 0;
+    }
+    .vitrine__titulo {
+      margin-right: 8px; font-size: 11px; font-weight: 700; letter-spacing: .16em;
+      text-transform: uppercase; color: var(--latao);
+    }
+    .vitrine__botao {
+      padding: 5px 11px; border-radius: 999px; border: 1px solid var(--linha);
+      background: transparent; color: var(--texto-suave); font-size: 12.5px; cursor: pointer;
+    }
+    .vitrine__botao:hover { color: var(--texto); }
+    .vitrine__botao--ativo { background: var(--ouro-suave); border-color: rgba(244,197,82,.5); color: var(--texto); }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="build/preview.js"></script>
+  <script>Elm.Preview.init({ node: document.getElementById("app"), flags: parseInt(location.hash.slice(1), 10) || 0 });</script>
+</body>
+</html>
