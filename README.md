@@ -129,6 +129,7 @@ type alias Props =
     , selected : Maybe Piece
     , hint : Maybe Hint                -- PlayHint Piece End | DrawHint | PassHint
     , lastPlayed : Maybe Piece
+    , opening : Maybe Piece            -- StartPiece do new_game/5: com a mesa vazia, só ela entra
     , log : List String                -- lance a lance, o mais novo primeiro
     , score : { player : Int, opponent : Int }
     , error : Maybe String
@@ -144,11 +145,22 @@ type alias Config msg =
     }
 ```
 
-No `Main.elm` basta converter o modelo para `Props` e chamar `View.view config (toProps model)`. O visual só usa as pontas da mesa para destacar peças e desenhar as sombras: quem valida a jogada é o Prolog.
+No `Main.elm` basta converter o modelo para `Props` e chamar `View.view config (toProps model)`. O visual só usa as pontas da mesa (e a `opening`, com a mesa vazia) para destacar peças e desenhar as sombras: quem valida a jogada é o Prolog.
+
+O botão "Passar a vez" fica liberado sempre que é a vez do jogador e a mesa não está vazia, mesmo tendo peça. Ele só fica em destaque quando não há outra saída. Para isso valer no jogo de verdade, o backend precisa aceitar o passe com peça: hoje o `can_pass/3` só deixa passar sem jogada e com o monte vazio.
 
 ### Vitrine
 
-`frontend/src/Preview.elm` mostra o visual em 12 cenários (início, meio de jogo, escolher a ponta, dica, sem jogada, computador pensando, mesa longa, vitória, derrota, empate, carregando e erro de rede) sem precisar do backend. Dá para clicar, escolher a ponta, comprar e pedir dica, mas o computador não joga.
+`frontend/src/Preview.elm` mostra o visual sem precisar do backend.
+
+- **Partida nova** é uma partida completa contra o computador, em turnos. As 28 peças são embaralhadas e cada um recebe 7. Quem tem a maior bucha abre com ela (sem bucha, abre a peça mais pesada), como no `starter/4`. Depois a vez alterna: o computador "pensa", compra até ter jogada (`draw_until_playable/6`) ou passa. A partida termina na batida ou no jogo trancado, como no `game_over/6`, e o placar vai somando.
+- **Nível do computador**: o computador não usa inteligência artificial, só uma regra fixa para escolher a jogada.
+  - Fácil: sorteia qualquer peça que encaixa.
+  - Médio: joga a peça mais pesada.
+  - Difícil: usa a mesma nota do `move_score/4` (pontos da peça, +5 se for bucha, +2 por peça que continua jogável), que é o `choose_move/3` do Prolog.
+- **Outros 11 cenários** (meio de jogo, escolher a ponta, dica, sem jogada, computador pensando, mesa longa, vitória, derrota, empate, carregando e erro de rede) começam numa situação pronta e continuam com turnos quando você joga.
+
+As regras da vitrine são uma cópia em Elm do `domino.pl`, só para testar a tela. No jogo de verdade quem decide é o Prolog.
 
 ## Como rodar
 
@@ -161,7 +173,7 @@ cd backend/prolog
 swipl -g "consult(test_domino), (run_tests -> halt(0) ; halt(1))"
 ```
 
-Vitrine do visual (precisa do [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html)):
+Vitrine do visual (precisa do [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html); com Node, dá para instalar com `npm install -g elm@0.19.1-6`):
 
 ```bash
 cd frontend

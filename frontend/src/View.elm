@@ -90,6 +90,8 @@ type Hint
   - `selected`: peça escolhida que encaixa nas duas pontas (aparecem as
     "sombras" onde ela pode entrar).
   - `lastPlayed`: a peça mais nova da mesa, que ganha um contorno dourado.
+  - `opening`: a peça que abre a partida (a `StartPiece` do `new_game/5`).
+    Com a mesa vazia, só ela pode ser jogada. `Nothing` libera qualquer peça.
   - `log`: frases do lance a lance, a mais recente primeiro.
 
 -}
@@ -102,6 +104,7 @@ type alias Props =
     , selected : Maybe Piece
     , hint : Maybe Hint
     , lastPlayed : Maybe Piece
+    , opening : Maybe Piece
     , log : List String
     , score : { player : Int, opponent : Int }
     , error : Maybe String
@@ -306,6 +309,9 @@ viewTurn props =
                     if props.selected /= Nothing then
                         ( "voce", "Escolha a ponta" )
 
+                    else if List.isEmpty props.table && props.opening /= Nothing then
+                        ( "voce", "Você abre com a " ++ Maybe.withDefault "" (Maybe.map pieceText props.opening) )
+
                     else if not (List.isEmpty playable) then
                         ( "voce", "Sua vez" )
 
@@ -496,7 +502,7 @@ ghostSlots width props slots =
         ( Just p, Just ( l, r ), Just first ) ->
             let
                 fits =
-                    fitsAt props.table p
+                    fitsFor props p
 
                 rightGhost =
                     if List.member RightEnd fits then
@@ -592,7 +598,7 @@ viewChain cfg props width cls =
     in
     Svg.svg [ SA.viewBox box, SA.class cls ]
         [ if List.isEmpty props.table then
-            emptyTable width height
+            emptyTable width height props.opening
 
           else
             Svg.text ""
@@ -610,8 +616,8 @@ viewChain cfg props width cls =
         ]
 
 
-emptyTable : Float -> Float -> Svg msg
-emptyTable width height =
+emptyTable : Float -> Float -> Maybe Piece -> Svg msg
+emptyTable width height opening =
     let
         cx =
             width / 2 * cell
@@ -634,8 +640,22 @@ emptyTable width height =
             [ Svg.text "A mesa está vazia" ]
         , Svg.text_
             [ SA.x (String.fromFloat cx), SA.y (String.fromFloat (cy + cell / 2 + 38)), SA.textAnchor "middle", SA.class "mesa-vazia__sub" ]
-            [ Svg.text "a maior bucha abre o jogo" ]
+            [ Svg.text (openingText opening) ]
         ]
+
+
+openingText : Maybe Piece -> String
+openingText opening =
+    case opening of
+        Just p ->
+            if isDouble p then
+                "a maior bucha abre: " ++ pieceText p
+
+            else
+                "sem bucha, abre a mais pesada: " ++ pieceText p
+
+        Nothing ->
+            "a maior bucha abre o jogo"
 
 
 placement : Float -> Float -> Slot -> String
@@ -732,7 +752,7 @@ handTile cfg props n i p =
             props.status == PlayerTurn
 
         fits =
-            fitsAt props.table p
+            fitsFor props p
 
         playable =
             playerTurn && not (List.isEmpty fits)
@@ -827,12 +847,12 @@ viewActions cfg props =
             noMove && props.boneyard > 0
 
         canPass =
-            noMove && props.boneyard == 0
+            playerTurn && not (List.isEmpty props.table)
 
         endButtons =
             case ( props.selected, tableEnds props.table ) of
                 ( Just p, Just ( l, r ) ) ->
-                    if List.length (fitsAt props.table p) > 1 then
+                    if List.length (fitsFor props p) > 1 then
                         [ endButton cfg props p LeftEnd ("◀ Ponta " ++ String.fromInt l)
                         , endButton cfg props p RightEnd ("Ponta " ++ String.fromInt r ++ " ▶")
                         ]
@@ -847,7 +867,16 @@ viewActions cfg props =
         (endButtons
             ++ [ actionButton (playerTurn && props.hint == Nothing) False "" cfg.onHint "Dica"
                , actionButton canDraw (props.hint == Just DrawHint) "botao--primario" cfg.onDraw "Comprar"
-               , actionButton canPass (props.hint == Just PassHint) "botao--primario" cfg.onPass "Passar a vez"
+               , actionButton canPass
+                    (props.hint == Just PassHint)
+                    (if noMove && props.boneyard == 0 then
+                        "botao--primario"
+
+                     else
+                        ""
+                    )
+                    cfg.onPass
+                    "Passar a vez"
                ]
         )
 
@@ -1242,7 +1271,23 @@ fitsAt table ( a, b ) =
 
 playablePieces : Props -> List Piece
 playablePieces props =
-    List.filter (\p -> not (List.isEmpty (fitsAt props.table p))) props.playerHand
+    List.filter (\p -> not (List.isEmpty (fitsFor props p))) props.playerHand
+
+
+{-| Onde a peça pode entrar, respeitando a peça de abertura.
+-}
+fitsFor : Props -> Piece -> List End
+fitsFor props p =
+    case ( props.table, props.opening ) of
+        ( [], Just o ) ->
+            if same o p then
+                [ RightEnd ]
+
+            else
+                []
+
+        _ ->
+            fitsAt props.table p
 
 
 orientRight : Int -> Piece -> Piece
