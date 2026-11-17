@@ -178,6 +178,33 @@ O botão "Passar a vez" fica liberado sempre que é a vez do jogador e a mesa n�
 
 As regras da vitrine são uma cópia em Elm do `domino.pl`, só para testar a tela. No jogo de verdade quem decide é o Prolog.
 
+## Lógica da tela
+
+`frontend/src/Main.elm` liga o visual (`View.elm`) ao backend (`Api.elm`). Ele não repete as regras do Prolog: guarda o último estado que o backend confirmou e segue o `turn` que vem nele.
+
+- **Peça e ponta**: o clique numa peça chega do `View` como `onPlay` (encaixa numa ponta só) ou `onSelect` (encaixa nas duas, e o jogador escolhe a ponta nas sombras). A jogada vai para `/play` como `[Peça, Lado]`, e comprar e passar vão como `"draw"` e `"pass"`.
+- **Turnos**: o jogador só age na vez dele, com a partida em andamento e sem outra requisição pendente (os cliques nesse meio-tempo são ignorados). Quando a vez passa para o computador, a tela mostra "computador pensando" por 0,9 s e chama `/opponent-move`. Se a partida nova começar com o computador, isso acontece logo de cara.
+- **Abertura**: com a mesa vazia, só a `start_piece` do `new-game` pode ser jogada.
+- **Lance a lance**: as frases ("Você jogou 5|2 na ponta direita.", "Computador comprou 2 peças.") e o contorno da última peça saem da diferença entre o estado de antes e o de depois, então o backend só precisa devolver o estado novo. As peças que o computador compra ficam escondidas: só a quantidade aparece.
+- **Fim de jogo**: quando vem `result`, a tela mostra o cartão de batida ou trancado e soma os pontos no placar, que continua de uma partida para a outra.
+- **Mensagens de erro**:
+  - jogada recusada (HTTP 400): aparece a frase do `detail`. Se o backend não mandar frase, a tela explica pela ação ("A 2|3 não encaixa na ponta esquerda.");
+  - servidor fora do ar, demora ou erro 500: a tela avisa e a partida fica como estava;
+  - falha na vez do computador: a tela tenta de novo duas vezes antes de pedir uma partida nova;
+  - respostas que chegam de uma partida antiga são descartadas.
+
+### Backend falso
+
+`frontend/dev/backend-falso.ps1` faz o papel do backend só para testar a tela, sem FastAPI nem Prolog. Ele segue o contrato das [rotas HTTP](#rotas-http), copia as regras do `domino.pl` e também serve os arquivos do frontend. Não precisa instalar nada além do Windows PowerShell.
+
+```powershell
+cd frontend
+elm make src/Main.elm --output=build/main.js
+powershell -ExecutionPolicy Bypass -File dev/backend-falso.ps1
+```
+
+Depois é só abrir `http://localhost:8000`. Para parar, feche a janela. No jogo de verdade quem decide é o Prolog.
+
 ## Como rodar
 
 Requisito: [SWI-Prolog](https://www.swi-prolog.org/download/stable) 9 ou mais novo.
@@ -207,7 +234,7 @@ elm make src/Main.elm --output=build/main.js
 open index.html
 ```
 
-Outro endereço de backend vai no próprio link: `index.html?api=http://localhost:9000`.
+Outro endereço de backend vai no próprio link: `index.html?api=http://localhost:9000`. Sem o backend de verdade, dá para usar o [backend falso](#backend-falso).
 
 O backend FastAPI ainda não está no repositório. As instruções dele entram aqui quando for adicionado.
 
@@ -218,8 +245,8 @@ O backend FastAPI ainda não está no repositório. As instruções dele entram 
 | 1. Prolog: preparação | VituuDias | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 2. Prolog: jogadas | Guga | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 3. Prolog: fim de jogo e adversário | Pedro Luiz | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
-| 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | 🚧 `Api.elm` provisório, feito junto com a parte 5 |
-| 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm`, `index.html` | ✅ pronto (falta testar com o backend) |
+| 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
+| 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm`, `index.html`, `dev/backend-falso.ps1` | ✅ pronto |
 | 6. Elm: visual | Patrick Anderson Carvalho dos Santos | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
 | 7. Integração e documentação | — | `backend/app/`, `Makefile`, `RELATORIO.md` | ⏳ pendente |
 
