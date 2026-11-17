@@ -13,7 +13,8 @@
     shuffle/2,         % +Pieces, -Shuffled
     deal/4,            % +Shuffled, -Player, -Opponent, -Boneyard
     piece_rank/2,      % +Piece, -Rank
-    starter/4          % +Player, +Opponent, -Turn, -Piece
+    starter/4,         % +Player, +Opponent, -Turn, -Piece
+    new_game/5         % -Player, -Opponent, -Boneyard, -Turn, -StartPiece
 ]).
 
 :- use_module(library(lists)).
@@ -57,3 +58,11 @@ starter(Player, Opponent, Turn, Piece) :-
               piece_rank(P, Rank) ),
             Candidates),
     max_member(_-(Turn-Piece), Candidates).
+
+%% new_game(-Player, -Opponent, -Boneyard, -Turn, -StartPiece)
+%  Predicado que o backend vai chamar: monta uma partida completa.
+new_game(Player, Opponent, Boneyard, Turn, StartPiece) :-
+    all_pieces(Pieces),
+    shuffle(Pieces, Shuffled),
+    deal(Shuffled, Player, Opponent, Boneyard),
+    starter(Player, Opponent, Turn, StartPiece).

@@ -48,4 +48,10 @@ test(starter_sem_carroca_soma_unica) :-
     starter([[1,2],[5,6]], [[4,5],[0,1]], Turn, Piece),
     Turn == player, Piece == [5,6].
     
+test(new_game_peca_inicial_esta_na_mao_de_quem_comeca) :-
+    forall(between(1, 50, _),
+           ( new_game(P, O, B, Turn, Start),
+             length(B, 14),
+             ( Turn == player -> memberchk(Start, P) ; memberchk(Start, O) ) )).
+             
 :- end_tests(domino).
