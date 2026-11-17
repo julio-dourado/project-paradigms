@@ -1,0 +1,8 @@
+# Site do dominó no Caddy compartilhado da VM (o do Koin).
+# Instalado à mão em /opt/koin/proxy/caddy/sites/domino.caddy (veja deploy/README.md);
+# o CD do dominó não mexe nos arquivos do Koin.
+domino.144-22-232-63.sslip.io {
+	encode gzip zstd
+	header -Server
+	reverse_proxy domino-app:8000
+}

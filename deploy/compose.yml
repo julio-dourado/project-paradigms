@@ -1,0 +1,29 @@
+# Dominó na VM Oracle. Fica em /opt/domino/, com APP_IMAGE no .env (gravado pelo deploy).
+# O Caddy do Koin (já dono das portas 80/443) alcança o app pela rede koin-edge,
+# pelo nome domino-app; o site está em /opt/koin/proxy/caddy/sites/domino.caddy.
+#   docker compose -p domino --project-directory /opt/domino up -d --wait
+
+name: domino
+
+services:
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE é definido pelo deploy}
+    restart: unless-stopped
+    networks:
+      edge:
+        aliases:
+          - domino-app
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  edge:
+    external: true
+    name: koin-edge

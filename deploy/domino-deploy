@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Forced command da chave SSH de deploy do GitHub Actions (instalado em /usr/local/bin/domino-deploy).
+# A chave só consegue rodar isto:
+#   tar -czf - deploy ghcr_token | ssh domino-deploy@<vm> "sha-xxxxxxx"
+# O tar traz a pasta deploy/ do commit e o GITHUB_TOKEN efêmero do job (só para o pull no GHCR).
+# Se a imagem nova não ficar saudável, volta para a anterior.
+# Mudou este arquivo? Reinstale na VM à mão (deploy/README.md): o CD não se autoatualiza.
+set -euo pipefail
+
+read -r TAG _ <<<"${SSH_ORIGINAL_COMMAND:-}"
+[[ "${TAG:-}" =~ ^sha-[0-9a-f]{7,40}$ ]] || { echo "tag inválida: '${TAG:-}'" >&2; exit 2; }
+
+IMAGE=ghcr.io/julio-dourado/project-paradigms
+BASE=/opt/domino
+
+exec 9>"$BASE/.deploy.lock"
+flock 9
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+tar -xzf - -C "$tmp"
+
+install -m 644 "$tmp/deploy/compose.yml" "$BASE/compose.yml"
+touch "$BASE/.env"
+
+set_image() { sed -i '/^APP_IMAGE=/d' "$BASE/.env"; echo "APP_IMAGE=$1" >>"$BASE/.env"; }
+compose() { docker compose -p domino --project-directory "$BASE" -f "$BASE/compose.yml" "$@"; }
+
+docker network inspect koin-edge >/dev/null 2>&1 || { echo "rede koin-edge não existe (o proxy do Koin está no ar?)" >&2; exit 2; }
+
+prev=$(sed -n 's/^APP_IMAGE=//p' "$BASE/.env")
+echo "==> domino: ${prev:-(nenhuma)} -> $IMAGE:$TAG"
+
+export DOCKER_CONFIG="$tmp/docker"
+docker login ghcr.io -u github-actions --password-stdin <"$tmp/ghcr_token" >/dev/null
+docker pull -q "$IMAGE:$TAG"
+docker logout ghcr.io >/dev/null
+unset DOCKER_CONFIG
+
+set_image "$IMAGE:$TAG"
+if ! compose up -d --wait --wait-timeout 120; then
+  echo "==> falhou; logs do app:" >&2
+  compose logs --tail 80 app >&2 || true
+  if [ -n "$prev" ]; then
+    echo "==> rollback para $prev" >&2
+    set_image "$prev"
+    compose up -d --wait --wait-timeout 120 || true
+  fi
+  exit 1
+fi
+
+# Guarda só as 3 imagens mais novas do dominó.
+docker images "$IMAGE" --format '{{.Repository}}:{{.Tag}}' | tail -n +4 | xargs -r docker rmi >/dev/null 2>&1 || true
+echo "==> ok: $IMAGE:$TAG"
