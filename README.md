@@ -15,6 +15,7 @@ Navegador (Elm)  <--HTTP/JSON-->  FastAPI (Python)  <--janus-->  SWI-Prolog
 - **Prolog** (`backend/prolog/`): toda a lógica do jogo, como distribuir as peças, validar jogadas, comprar, passar a vez, detectar o fim e escolher a jogada do computador.
 - **FastAPI** (`backend/app/`): recebe as requisições do navegador, chama o Prolog pelo [janus](https://www.swi-prolog.org/pldoc/man?section=janus) e devolve JSON.
 - **Elm** (`frontend/src/`): a tela do jogo, com a mesa, a mão do jogador e a do oponente. O desenho fica em `View.elm` e `style.css` (veja [Visual](#visual)).
+  A lógica da tela fica em `Main.elm`: seleção de peça e ponta, turnos e mensagens de erro. O `Main` guarda o último estado que o backend confirmou e segue o `turn` dele, sem repetir as regras do Prolog.
 
 ## Representação dos dados
 
@@ -41,7 +42,22 @@ Estado da partida trocado com o frontend:
 }
 ```
 
-Rotas previstas: `new-game`, `play`, `opponent-move` e `hint`.
+### Rotas HTTP
+
+Proposta da parte 5, já usada pelo `Main.elm` (detalhes em `frontend/src/Api.elm`). Todas são `POST` e o estado vai e volta inteiro: o backend não guarda nada entre uma chamada e outra.
+
+| Rota | Corpo | Resposta |
+|---|---|---|
+| `/new-game` | vazio | `{"state", "start_piece"}` |
+| `/play` | `{"state", "action"}` | `{"state", "result"}` |
+| `/opponent-move` | `{"state"}` | `{"state", "result"}` |
+| `/hint` | `{"state"}` | `{"hint"}` |
+
+- `action` e `hint` têm o formato do `hint/4`: `[[2,4],"right"]`, `"draw"` ou `"pass"`. Comprar e passar vão pela rota `play`.
+- `start_piece` é a `StartPiece` do `new_game/5`. Com a mesa vazia, a tela só deixa jogar essa peça.
+- `result` é `null` enquanto há jogo e, no fim, `{"winner": "player", "points": 14}` (o `game_over/6`).
+- `opponent-move` faz a vez inteira do computador: compra com `draw_until_playable/6` e joga com `choose_move/3`, ou passa. O `turn` devolvido já é o de quem joga em seguida.
+- Jogada inválida responde HTTP 400 com `{"detail": "frase para o jogador"}`, e a frase aparece na tela.
 
 ## Predicados Prolog
 
@@ -183,7 +199,17 @@ open preview.html
 
 Um cenário específico abre direto pelo número no endereço, por exemplo `preview.html#6` para a mesa longa.
 
-O backend FastAPI e a tela completa (`Main.elm`) ainda não estão no repositório. As instruções deles entram aqui quando forem adicionados.
+Tela do jogo (precisa do backend rodando em `http://localhost:8000`):
+
+```bash
+cd frontend
+elm make src/Main.elm --output=build/main.js
+open index.html
+```
+
+Outro endereço de backend vai no próprio link: `index.html?api=http://localhost:9000`.
+
+O backend FastAPI ainda não está no repositório. As instruções dele entram aqui quando for adicionado.
 
 ## Andamento
 
@@ -192,8 +218,8 @@ O backend FastAPI e a tela completa (`Main.elm`) ainda não estão no repositór
 | 1. Prolog: preparação | VituuDias | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 2. Prolog: jogadas | Guga | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 3. Prolog: fim de jogo e adversário | Pedro Luiz | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
-| 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
-| 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm` | ⏳ pendente |
+| 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | 🚧 `Api.elm` provisório, feito junto com a parte 5 |
+| 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm`, `index.html` | ✅ pronto (falta testar com o backend) |
 | 6. Elm: visual | Patrick Anderson Carvalho dos Santos | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
 | 7. Integração e documentação | — | `backend/app/`, `Makefile`, `RELATORIO.md` | ⏳ pendente |
 

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dominó</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="build/main.js"></script>
+  <script>
+    // O endereço do backend pode vir no endereço da página: index.html?api=http://localhost:9000
+    var api = new URLSearchParams(location.search).get("api");
+    Elm.Main.init({ node: document.getElementById("app"), flags: api });
+  </script>
+</body>
+</html>
