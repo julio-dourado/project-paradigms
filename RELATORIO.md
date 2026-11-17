@@ -96,39 +96,40 @@ O FastAPI atende as rotas em várias threads; um `threading.Lock` em `prolog.py`
 
 ### 6.2 Rotas
 
-Todas recebem e devolvem JSON. As que mudam a partida respondem com `{"state", "event", "game_over"}`.
+As rotas seguem o contrato da tela (`frontend/src/Api.elm`, parte 5). Todas recebem e devolvem JSON e respondem na raiz (`/new-game`) e também em `/api` (`/api/new-game`). As que mudam a partida respondem com `{"state", "result", "event", "game_over"}`.
 
 | Rota | Corpo | Predicados usados | O que faz |
 |---|---|---|---|
-| `POST /api/new-game` | — | `new_game/5` | Partida nova com a mesa vazia. `event.start_piece` diz a peça de saída. |
-| `POST /api/play` | `state`, `piece`, `side` | `starter/4`, `play_piece/6`, `next_turn/2` | Jogada do jogador. |
-| `POST /api/draw` | `state` | `playable_pieces/3`, `draw/4` | Compra uma peça (só sem jogada na mão). |
-| `POST /api/pass` | `state` | `can_pass/3`, `next_turn/2` | Passa a vez (só sem jogada e com o monte vazio). |
-| `POST /api/opponent-move` | `state` | `starter/4`, `draw_until_playable/6`, `choose_move/3`, `play_piece/6` | Vez inteira do computador: compra o que precisar e joga ou passa. |
-| `POST /api/hint` | `state` | `starter/4`, `hint/4` | Dica: `{"type": "play", "piece", "side"}`, `{"type": "draw"}` ou `{"type": "pass"}`. |
-| `GET /api/health` | — | `next_turn/2` | Confere se o Prolog carregou. |
+| `POST /new-game` | — | `new_game/5` | Partida nova com a mesa vazia. `start_piece` diz a peça de saída. |
+| `POST /play` | `state`, `action` | `starter/4`, `play_piece/6`, `draw/4`, `can_pass/3`, `next_turn/2` | Vez do jogador. `action` tem o formato do `hint/4`: `[[2,4],"right"]`, `"draw"` ou `"pass"`. |
+| `POST /opponent-move` | `state` | `starter/4`, `draw_until_playable/6`, `choose_move/3`, `play_piece/6` | Vez inteira do computador: compra o que precisar e joga ou passa. |
+| `POST /hint` | `state` | `starter/4`, `hint/4` | Dica no formato do `hint/4`: `[[2,4],"right"]`, `"draw"` ou `"pass"`. |
+| `GET /health` | — | `next_turn/2` | Confere se o Prolog carregou. |
 
-Toda resposta com estado passa por `game_over/6`; quando a partida acaba, `game_over` traz `winner`, `points` e `reason` (`domino` na batida, `blocked` no jogo trancado).
+Também existem `POST /draw` e `POST /pass`, atalhos para o `/play` com `"draw"` e `"pass"`.
 
-Erros: **422** quando a jogada não vale ou o estado recebido é impossível, **409** quando não é a vez de quem pediu ou a partida já acabou. A mensagem vem em `detail`, em português, pronta para o campo `error` da tela.
+Toda resposta com estado passa por `game_over/6`. `result` é `null` enquanto há jogo e, no fim, `{"winner", "points"}`, que é o campo usado pela tela. `game_over` traz o mesmo com `reason` (`domino` na batida, `blocked` no jogo trancado), e `event` conta o lance (quem jogou, qual peça, o que comprou).
+
+Erros: **400** quando a jogada não vale, **409** quando não é a vez de quem pediu ou a partida já acabou, e **422** quando o corpo não é um estado possível. A frase vem em `detail`, em português, e a tela mostra no campo `error`.
 
 ### 6.3 Decisões
 
 - **Peça de saída.** O `fits/3` aceita qualquer peça com a mesa vazia, mas a partida deve abrir com a maior bucha. Em vez de guardar a `StartPiece` no estado, a API pergunta de novo ao `starter/4`: com a mesa vazia as mãos ainda são as do começo, então a resposta é a mesma do `new_game/5`.
-- **Passar a vez segue o `can_pass/3`.** O visual libera o botão "Passar" mesmo com peça na mão (ver README). A integração manteve a regra do Prolog: o passe com jogada ou com monte é recusado com 422 e uma mensagem explicando o porquê. Assim a regra continua num lugar só.
+- **Passar a vez segue o `can_pass/3`.** O visual libera o botão "Passar" mesmo com peça na mão (ver README). A integração manteve a regra do Prolog: o passe com jogada ou com monte é recusado com 400 e uma mensagem explicando o porquê. Assim a regra continua num lugar só.
 - **Compra uma a uma para o jogador, de uma vez para o computador.** O jogador compra com `draw/4`, para a tela animar cada peça e a dica voltar a valer. O computador usa `draw_until_playable/6`, e `event.drawn` lista o que ele comprou.
 - **Validação do estado.** Como o estado vem do navegador, a API confere se ele é um jogo possível: números de 0 a 6, peças da mão e do monte em ordem crescente, peças vizinhas da mesa encostando e as 28 peças presentes uma vez só. Isso evita que um estado adulterado chegue ao Prolog.
-- **Mesma origem.** O FastAPI serve a pasta `frontend/`, então `http://localhost:8000/` abre o jogo e a API fica em `/api`, sem precisar de CORS. O CORS fica liberado só para facilitar o desenvolvimento com `elm reactor`.
+- **Mesma origem.** O FastAPI serve a pasta `frontend/`, então `http://localhost:8000/` abre o jogo e as rotas ficam no mesmo endereço, sem precisar de CORS. O `index.html` usa o próprio endereço da página como backend, o que vale tanto para o computador de quem desenvolve quanto para o site no ar. O CORS fica liberado só para facilitar o desenvolvimento com `elm reactor`.
 
 ### 6.4 Testes da integração
 
-`backend/tests/test_api.py` tem 41 testes que passam pelas três camadas (HTTP, FastAPI, janus e o SWI-Prolog de verdade, sem dublês):
+`backend/tests/test_api.py` tem 49 testes que passam pelas três camadas (HTTP, FastAPI, janus e o SWI-Prolog de verdade, sem dublês):
 
 - cada rota no caminho feliz e nos erros (jogada inválida, fora da vez, monte vazio, passe recusado);
 - abertura com a peça de saída, batida e jogo trancado;
 - computador comprando até ter jogada e passando;
 - estados inválidos recusados;
-- 10 partidas inteiras jogadas só pela API, seguindo a dica, conferindo a cada lance que as 28 peças continuam lá.
+- 10 partidas inteiras jogadas só pela API como a tela faz (a dica vira a `action` do `/play`), na raiz e em `/api`, conferindo a cada lance que as 28 peças continuam lá;
+- o contrato da tela: `start_piece`, `result`, `action` e a frase em `detail`.
 
 ## 7. Como rodar
 
@@ -136,12 +137,24 @@ Requisitos: SWI-Prolog 9 ou mais novo, Python 3.10 ou mais novo e, para a tela, 
 
 ```bash
 make install     # ambiente Python do backend (FastAPI + janus)
-make test        # 67 testes do Prolog + 41 da API
+make test        # 67 testes do Prolog + 49 da API
 make build       # compila o Elm
 make run         # http://localhost:8000 (jogo) e http://localhost:8000/docs (API)
 ```
 
 `make preview` abre a vitrine do visual, que não precisa do backend.
+
+Com Docker, a imagem completa: `docker build -t domino .` e `docker run --rm -p 8000:8000 domino`.
+
+### 7.1 Deploy
+
+O jogo fica no ar em **https://domino.144-22-232-63.sslip.io**, numa VM Oracle (ARM) que já hospeda outro projeto:
+
+- **Uma imagem só** (`Dockerfile`): a primeira etapa compila o Elm, a segunda instala FastAPI e janus sobre a imagem oficial do SWI-Prolog, e a final junta o backend e os arquivos da tela. O Elm só existe para x86-64, então essa etapa roda sempre em amd64; o JavaScript gerado serve para o ARM.
+- **GitHub Actions** (`.github/workflows/ci.yml`): testes em todo push e PR; push na branch `deploy` gera a imagem `linux/arm64`, publica no GHCR e chama a VM.
+- **Na VM**, o deploy usa um usuário próprio, cuja chave SSH só consegue rodar o script `domino-deploy`. O script baixa a imagem, sobe o container e volta para a versão anterior se o healthcheck falhar. O HTTPS fica com o Caddy que já estava na VM, que ganhou só um arquivo de site novo; o outro projeto não foi alterado.
+
+Detalhes em `deploy/README.md`.
 
 ## 8. Situação e próximos passos
 
@@ -149,8 +162,9 @@ make run         # http://localhost:8000 (jogo) e http://localhost:8000/docs (AP
 |---|---|
 | Regras em Prolog (partes 1 a 3) | Prontas e testadas. |
 | Visual em Elm (parte 6) | Pronto, com vitrine jogável. |
-| Backend, Makefile e documentação (parte 7) | Prontos e testados. |
-| `Domino.elm`, `Api.elm` e `Main.elm` (partes 4 e 5) | Pendentes. O contrato da API (seção 6.2) e o `index.html` já estão prontos para recebê-los: o `Main` é iniciado com `flags = { api = "/api" }`. |
+| Lógica da tela (`Main.elm`, parte 5) | Pronta e ligada ao backend de verdade, com um `Api.elm` provisório. |
+| Modelo e API em Elm (`Domino.elm`, `Api.elm`, parte 4) | Pendente; o `Api.elm` provisório da parte 5 já segue o contrato da seção 6.2. |
+| Backend, Makefile, deploy e documentação (parte 7) | Prontos e testados; jogo no ar. |
 
 ## 9. Conclusão
 

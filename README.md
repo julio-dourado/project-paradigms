@@ -215,8 +215,8 @@ O `Makefile` na raiz junta tudo:
 |---|---|
 | `make install` | Cria `backend/.venv` com FastAPI e janus. |
 | `make test` | Testes do Prolog (`test-prolog`) e da API (`test-api`). |
-| `make build` | Compila o Elm: o jogo (`build/main.js`, quando o `Main.elm` existir) e a vitrine (`build/preview.js`). |
-| `make run` | Sobe o backend em `http://localhost:8000`: a API em `/api`, o jogo em `/` e a vitrine em `/preview.html`. |
+| `make build` | Compila o Elm: o jogo (`build/main.js`) e a vitrine (`build/preview.js`). |
+| `make run` | Sobe o backend em `http://localhost:8000`: o jogo em `/`, a vitrine em `/preview.html`, as rotas na raiz (e também em `/api`) e a documentação em `/docs`. |
 | `make preview` | Compila e abre a vitrine, sem backend. |
 
 Sem `make`, os comandos equivalentes:
@@ -242,9 +242,9 @@ open preview.html
 
 Um cenário específico da vitrine abre direto pelo número no endereço, por exemplo `preview.html#6` para a mesa longa.
 
-O jogo completo abre em `frontend/index.html`, que inicia o `Elm.Main` com `flags = { api = "/api" }` (ou `http://localhost:8000/api`, se aberto direto do disco). Enquanto o `Main.elm` não existir, a página mostra um aviso com o link da vitrine.
+O jogo completo é o `frontend/index.html`. Servido pelo backend (`make build` e depois `make run`), ele usa o próprio endereço da página como backend. Aberto direto do disco, usa `http://localhost:8000`.
 
-Tela do jogo (precisa do backend rodando em `http://localhost:8000`):
+Tela do jogo aberta do disco (precisa do backend rodando em `http://localhost:8000`):
 
 ```bash
 cd frontend
@@ -254,8 +254,29 @@ open index.html
 
 Outro endereço de backend vai no próprio link: `index.html?api=http://localhost:9000`. Sem o backend de verdade, dá para usar o [backend falso](#backend-falso).
 
-O backend FastAPI ainda não está no repositório. As instruções dele entram aqui quando for adicionado.
+Com Docker, a imagem completa (tela + API + Prolog):
+
+```bash
+docker build -t domino .
+docker run --rm -p 8000:8000 domino
+```
+
 O relatório do trabalho está em [`RELATORIO.md`](RELATORIO.md).
+
+## Deploy
+
+O jogo fica no ar em **https://domino.144-22-232-63.sslip.io**, numa VM Oracle (ARM) ao lado de outro projeto, atrás do mesmo Caddy.
+
+- Todo push e PR roda os testes no GitHub Actions (`.github/workflows/ci.yml`).
+- Push na branch `deploy` gera a imagem `linux/arm64`, publica no GHCR e sobe na VM. Se a versão nova não ficar saudável, a VM volta para a anterior.
+
+Para publicar o que está na `main`:
+
+```bash
+git push origin main:deploy
+```
+
+Detalhes da VM, dos secrets e da instalação em [`deploy/README.md`](deploy/README.md).
 
 ## Andamento
 
@@ -267,7 +288,7 @@ O relatório do trabalho está em [`RELATORIO.md`](RELATORIO.md).
 | 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
 | 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm`, `index.html`, `dev/backend-falso.ps1` | ✅ pronto |
 | 6. Elm: visual | Patrick Anderson Carvalho dos Santos | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
-| 7. Integração e documentação | Julio Cesar Almeida Dourado | `backend/app/`, `backend/tests/`, `Makefile`, `frontend/index.html`, `RELATORIO.md` | ✅ pronto |
+| 7. Integração e documentação | Julio Cesar Almeida Dourado | `backend/app/`, `backend/tests/`, `Makefile`, `Dockerfile`, `deploy/`, `.github/workflows/`, `RELATORIO.md` | ✅ pronto |
 
 ## Prazos
 

@@ -1,0 +1,105 @@
+# CI/CD do dominó.
+# - Todo push e PR: testes do Prolog e da API (dentro da imagem do SWI-Prolog).
+# - Push na branch deploy: gera a imagem arm64, publica no GHCR e sobe na VM Oracle.
+# Para publicar: leve a main para a deploy (PR main -> deploy, ou git push origin main:deploy).
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main, deploy]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    container: swipl:10.0.2
+    steps:
+      - name: Dependências do sistema
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 python3-venv python3-dev gcc libc6-dev make git
+      - uses: actions/checkout@v4
+      - name: Ambiente Python
+        run: make install PYTHON=python3
+      - name: Testes do Prolog
+        run: make test-prolog
+      - name: Testes da API
+        run: make test-api
+
+  image:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/deploy'
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    concurrency:
+      group: deploy-oracle
+      cancel-in-progress: false
+    environment:
+      name: oracle
+      url: https://domino.144-22-232-63.sslip.io
+    steps:
+      - uses: actions/checkout@v4
+      - name: Chave SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy na VM
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.image.outputs.tag }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" > ghcr_token
+          tar -czf - deploy ghcr_token | ssh -i ~/.ssh/deploy -o BatchMode=yes "domino-deploy@$HOST" "$TAG"
+          rm -f ghcr_token
+      - name: Site no ar
+        run: |
+          for i in $(seq 1 10); do
+            curl -fsS https://domino.144-22-232-63.sslip.io/health && exit 0
+            sleep 3
+          done
+          exit 1

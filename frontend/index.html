@@ -12,7 +12,10 @@
   <script src="build/main.js"></script>
   <script>
     // O endereço do backend pode vir no endereço da página: index.html?api=http://localhost:9000
-    var api = new URLSearchParams(location.search).get("api");
+    // Sem ele, servido por http(s) (backend local ou o site no ar), usa o próprio endereço da página.
+    // Aberto direto do disco, o Main.elm cai no padrão http://localhost:8000.
+    var api = new URLSearchParams(location.search).get("api")
+      || (location.protocol.indexOf("http") === 0 ? location.origin : null);
     Elm.Main.init({ node: document.getElementById("app"), flags: api });
   </script>
 </body>

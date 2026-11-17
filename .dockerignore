@@ -1,0 +1,11 @@
+.git
+.github
+**/.venv
+**/__pycache__
+**/.pytest_cache
+frontend/build
+frontend/elm-stuff
+frontend/dev
+backend/tests
+deploy
+*.md

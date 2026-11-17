@@ -106,17 +106,17 @@ def test_play_vira_a_peca_na_esquerda():
     assert r.json()["state"]["table"] == [[0, 6], [6, 5], [5, 2]]
 
 
-def test_play_invalida_devolve_422():
+def test_play_invalida_devolve_400():
     s = make_state([[0, 1], [3, 3]], [[1, 1]], [[6, 5], [5, 2]])
     r = client.post("/api/play", json={"state": s, "piece": [0, 1], "side": "right"})
-    assert r.status_code == 422
+    assert r.status_code == 400
     assert "inválida" in r.json()["detail"]
 
 
-def test_play_peca_que_nao_esta_na_mao_devolve_422():
+def test_play_peca_que_nao_esta_na_mao_devolve_400():
     s = make_state([[0, 1]], [[1, 1]], [[6, 5], [5, 2]])
     r = client.post("/api/play", json={"state": s, "piece": [2, 3], "side": "right"})
-    assert r.status_code == 422
+    assert r.status_code == 400
 
 
 def test_play_fora_da_vez_devolve_409():
@@ -128,7 +128,7 @@ def test_play_fora_da_vez_devolve_409():
 def test_mesa_vazia_so_aceita_a_peca_de_saida():
     s = make_state([[6, 6], [0, 1]], [[5, 5]], [])
     r = client.post("/api/play", json={"state": s, "piece": [0, 1], "side": "right"})
-    assert r.status_code == 422
+    assert r.status_code == 400
     r = client.post("/api/play", json={"state": s, "piece": [6, 6], "side": "right"})
     assert r.status_code == 200
     assert r.json()["state"]["table"] == [[6, 6]]
@@ -165,16 +165,16 @@ def test_draw_compra_uma_peca_do_monte():
     assert body["event"] == {"type": "draw", "who": "player", "pieces": [[4, 4]]}
 
 
-def test_draw_com_jogada_na_mao_devolve_422():
+def test_draw_com_jogada_na_mao_devolve_400():
     s = make_state([[2, 4]], [[3, 3]], [[6, 5], [5, 2]])
     r = client.post("/api/draw", json={"state": s})
-    assert r.status_code == 422
+    assert r.status_code == 400
 
 
-def test_draw_com_monte_vazio_devolve_422():
+def test_draw_com_monte_vazio_devolve_400():
     s = make_state([[0, 1]], [[3, 3]], [[6, 5], [5, 2]], boneyard=[])
     r = client.post("/api/draw", json={"state": s})
-    assert r.status_code == 422
+    assert r.status_code == 400
 
 
 def test_pass_sem_jogada_e_sem_monte():
@@ -193,7 +193,7 @@ def test_pass_sem_jogada_e_sem_monte():
 def test_pass_recusado(player, boneyard):
     s = make_state(player, [[3, 3]], [[6, 5], [5, 2]], boneyard=boneyard)
     r = client.post("/api/pass", json={"state": s})
-    assert r.status_code == 422
+    assert r.status_code == 400
 
 
 def test_jogada_que_tranca_o_jogo():
@@ -253,24 +253,23 @@ def test_opponent_passa_sem_jogada_e_sem_monte():
 def test_hint_sugere_jogada():
     s = make_state([[0, 6], [2, 4]], [[1, 1]], [[6, 5], [5, 2]])
     hint = client.post("/api/hint", json={"state": s}).json()["hint"]
-    assert hint["type"] == "play"
-    assert [hint["piece"], hint["side"]] in [[[0, 6], "left"], [[2, 4], "right"]]
+    assert hint in [[[0, 6], "left"], [[2, 4], "right"]]
 
 
 def test_hint_sugere_comprar():
     s = make_state([[0, 1]], [[3, 3]], [[6, 5], [5, 2]])
-    assert client.post("/api/hint", json={"state": s}).json()["hint"] == {"type": "draw"}
+    assert client.post("/api/hint", json={"state": s}).json()["hint"] == "draw"
 
 
 def test_hint_sugere_passar():
     s = make_state([[0, 1]], [[3, 3]], [[6, 5], [5, 2]], boneyard=[])
-    assert client.post("/api/hint", json={"state": s}).json()["hint"] == {"type": "pass"}
+    assert client.post("/api/hint", json={"state": s}).json()["hint"] == "pass"
 
 
 def test_hint_na_mesa_vazia_e_a_peca_de_saida():
     s = make_state([[6, 6], [0, 1]], [[5, 5]], [])
     hint = client.post("/api/hint", json={"state": s}).json()["hint"]
-    assert hint == {"type": "play", "piece": [6, 6], "side": "right"}
+    assert hint == [[6, 6], "right"]
 
 
 # ----------------------------------------------------------------------
@@ -307,30 +306,85 @@ def test_numero_fora_do_dominio_devolve_422():
 # ----------------------------------------------------------------------
 
 
-def play_full_game():
+def play_full_game(prefix):
     """Joga uma partida inteira seguindo a dica, até alguém ganhar ou trancar."""
-    body = client.post("/api/new-game").json()
+    body = client.post(f"{prefix}/new-game").json()
     for _ in range(200):
         s = body["state"]
         if body["game_over"]:
             return body
         if s["turn"] == "opponent":
-            r = client.post("/api/opponent-move", json={"state": s})
+            r = client.post(f"{prefix}/opponent-move", json={"state": s})
         else:
-            hint = client.post("/api/hint", json={"state": s}).json()["hint"]
-            if hint["type"] == "play":
-                r = client.post("/api/play", json={"state": s, "piece": hint["piece"], "side": hint["side"]})
-            else:
-                r = client.post(f"/api/{hint['type']}", json={"state": s})
+            # Como a tela faz: a dica do hint/4 vai direto como action do /play.
+            hint = client.post(f"{prefix}/hint", json={"state": s}).json()["hint"]
+            r = client.post(f"{prefix}/play", json={"state": s, "action": hint})
         assert r.status_code == 200, r.text
         body = r.json()
         assert all_pieces_in(body["state"]) == ALL_PIECES
     pytest.fail("a partida não terminou")
 
 
-@pytest.mark.parametrize("rodada", range(10))
-def test_partida_completa_termina(rodada):
-    over = play_full_game()["game_over"]
+@pytest.mark.parametrize("prefix", ["", "/api"], ids=["raiz", "api"])
+@pytest.mark.parametrize("rodada", range(5))
+def test_partida_completa_termina(rodada, prefix):
+    body = play_full_game(prefix)
+    over = body["game_over"]
     assert over["winner"] in {"player", "opponent", "draw"}
     assert over["reason"] in {"domino", "blocked"}
     assert over["points"] >= 0
+    assert body["result"] == {"winner": over["winner"], "points": over["points"]}
+
+
+# ----------------------------------------------------------------------
+# Contrato da tela (frontend/src/Api.elm)
+# ----------------------------------------------------------------------
+
+
+def test_rotas_respondem_na_raiz_e_em_api():
+    assert client.post("/new-game").status_code == 200
+    assert client.post("/api/new-game").status_code == 200
+    assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_new_game_traz_start_piece_e_result():
+    body = client.post("/new-game").json()
+    assert body["start_piece"] == body["event"]["start_piece"]
+    assert body["result"] is None
+
+
+def test_play_com_action_de_peca():
+    s = make_state([[2, 4], [0, 0]], [[1, 1]], [[6, 5], [5, 2]])
+    body = client.post("/play", json={"state": s, "action": [[2, 4], "right"]}).json()
+    assert body["state"]["table"] == [[6, 5], [5, 2], [2, 4]]
+    assert body["result"] is None
+
+
+def test_play_com_action_draw():
+    s = make_state([[0, 1]], [[3, 3]], [[6, 5], [5, 2]], boneyard=[[4, 4], [1, 2]])
+    body = client.post("/play", json={"state": s, "action": "draw"}).json()
+    assert body["state"]["player_hand"] == [[0, 1], [4, 4]]
+
+
+def test_play_com_action_pass():
+    s = make_state([[0, 1]], [[2, 3]], [[6, 5], [5, 2]], boneyard=[])
+    body = client.post("/play", json={"state": s, "action": "pass"}).json()
+    assert body["state"]["turn"] == "opponent"
+
+
+def test_play_recusado_traz_frase_em_detail():
+    s = make_state([[2, 4]], [[3, 3]], [[6, 5], [5, 2]])
+    r = client.post("/play", json={"state": s, "action": "pass"})
+    assert r.status_code == 400
+    assert isinstance(r.json()["detail"], str)
+
+
+def test_play_sem_action_devolve_422():
+    s = make_state([[2, 4]], [[3, 3]], [[6, 5], [5, 2]])
+    assert client.post("/play", json={"state": s}).status_code == 422
+
+
+def test_result_na_batida():
+    s = make_state([[2, 4]], [[1, 1], [3, 6]], [[6, 5], [5, 2]])
+    body = client.post("/play", json={"state": s, "action": [[2, 4], "right"]}).json()
+    assert body["result"]["winner"] == "player"
