@@ -310,3 +310,27 @@ test(jogada_escolhida_e_sempre_valida) :-
              ;  playable_pieces(O, Mesa, []) ) )).
 
 :- end_tests(adversario).
+
+:- begin_tests(dica).
+
+test(dica_de_jogada) :-
+    hint([[0,1],[5,6]], [[6,1]], [[2,2]], H),
+    H == [[5,6],left].
+
+test(dica_mesa_vazia) :-
+    hint([[1,2],[6,6]], [], [], H),
+    H == [[6,6],right].
+
+test(dica_comprar) :-
+    hint([[0,0]], [[6,5]], [[1,2]], H),
+    H == draw.
+
+test(dica_passar) :-
+    hint([[0,0]], [[6,5]], [], H),
+    H == pass.
+
+test(dica_tem_uma_resposta_so) :-
+    findall(H, hint([[0,1],[5,6]], [[6,1]], [], H), Hs),
+    length(Hs, 1).
+
+:- end_tests(dica).

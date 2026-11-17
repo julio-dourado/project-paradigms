@@ -72,6 +72,23 @@ Todos ficam no módulo `domino` (`backend/prolog/domino.pl`).
 | `can_pass(+Hand, +Table, +Boneyard)` | Só pode passar quem não tem jogada e não tem mais o que comprar. |
 | `next_turn(+Turn, -Next)` | Alterna entre `player` e `opponent`. |
 
+### Fim de jogo
+
+| Predicado | O que faz |
+|---|---|
+| `domino_out(+Hand)` | Verdadeiro se a mão está vazia (o jogador bateu). |
+| `blocked(+Player, +Opponent, +Table, +Boneyard)` | Jogo trancado: monte vazio e nenhum dos dois tem jogada. |
+| `hand_points(+Hand, -Points)` | Soma dos pontos da mão. |
+| `game_over(+Player, +Opponent, +Table, +Boneyard, -Winner, -Points)` | Falha enquanto há jogo. `Winner` é `player`, `opponent` ou `draw`. Na batida vence quem ficou sem peças; no trancado, quem tem menos pontos. O vencedor marca a soma da mão do perdedor (0 no empate). |
+
+### Adversário e dica
+
+| Predicado | O que faz |
+|---|---|
+| `move_score(+Move, +Hand, +Table, -Score)` | Nota da jogada: pontos da peça + 5 se for bucha + 2 por peça que continua jogável depois. |
+| `choose_move(+Hand, +Table, -Move)` | Jogada do computador: a de maior nota. Falha se não houver jogada (aí compra com `draw_until_playable/6` ou passa). |
+| `hint(+Hand, +Table, +Boneyard, -Hint)` | Dica para o jogador: `[Peça, Lado]`, `draw` (comprar) ou `pass` (passar). |
+
 Exemplo no `swipl`:
 
 ```prolog
@@ -104,7 +121,7 @@ O backend FastAPI e o frontend Elm ainda não estão no repositório. As instru�
 |---|---|---|---|
 | 1. Prolog: preparação | VituuDias | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 2. Prolog: jogadas | Guga | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
-| 3. Prolog: fim de jogo e adversário | Pedro Luiz | `backend/prolog/domino.pl` | ⏳ pendente |
+| 3. Prolog: fim de jogo e adversário | Pedro Luiz | `backend/prolog/domino.pl`, `test_domino.pl` | ✅ pronto |
 | 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
 | 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm` | ⏳ pendente |
 | 6. Elm: visual | — | `frontend/src/View.elm`, `style.css` | ⏳ pendente |

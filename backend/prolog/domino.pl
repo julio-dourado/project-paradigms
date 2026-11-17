@@ -37,7 +37,8 @@
     hand_points/2,     % +Hand, -Points
     game_over/6,       % +Player, +Opponent, +Table, +Boneyard, -Winner, -Points
     move_score/4,      % +Move, +Hand, +Table, -Score
-    choose_move/3      % +Hand, +Table, -Move
+    choose_move/3,     % +Hand, +Table, -Move
+    hint/4             % +Hand, +Table, +Boneyard, -Hint
 ]).
 
 :- use_module(library(lists)).
@@ -284,3 +285,19 @@ choose_move(Hand, Table, Move) :-
               Neg is -Score ),
             Scored),
     keysort(Scored, [_-Move|_]).
+
+
+% ======================================================================
+% Dica para o jogador
+% ======================================================================
+
+%% hint(+Hand, +Table, +Boneyard, -Hint)
+% Sugere o que o jogador deve fazer agora:
+% - [Peça, Lado]: a jogada que o computador faria no lugar dele
+%   (mesmo critério de choose_move/3);
+% - draw: não tem jogada, mas ainda dá para comprar do monte;
+% - pass: não tem jogada nem o que comprar, então passa a vez.
+hint(Hand, Table, _, Move) :-
+    choose_move(Hand, Table, Move), !.
+hint(_, _, [_|_], draw) :- !.
+hint(_, _, [], pass).
