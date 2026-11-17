@@ -267,3 +267,46 @@ test(partida_em_andamento, [fail]) :-
     game_over([[1,2]], [[0,3]], [[6,1]], [[4,4]], _, _).
 
 :- end_tests(fim_de_jogo).
+
+:- begin_tests(adversario).
+
+test(nota_da_jogada) :-
+    % [6,6] na mesa vazia: 12 pontos + 5 da bucha + 2 x 1 opção ([1,6])
+    move_score([[6,6],right], [[6,6],[1,6],[0,2]], [], S),
+    S == 19.
+
+test(sem_jogada_nao_escolhe, [fail]) :-
+    choose_move([[0,0],[2,4]], [[6,5],[5,1]], _).
+
+test(mesa_vazia_joga_a_mais_pesada) :-
+    choose_move([[1,2],[6,6]], [], M),
+    M == [[6,6],right].
+
+test(prefere_peca_pesada) :-
+    choose_move([[0,1],[5,6]], [[6,1]], M),
+    M == [[5,6],left].
+
+test(prefere_bucha_com_mesmos_pontos) :-
+    choose_move([[2,4],[3,3]], [[3,4]], M),
+    M == [[3,3],left].
+
+test(prefere_manter_opcoes) :-
+    % [0,3] e [1,2] valem 3; jogar [1,2] deixa duas peças jogáveis
+    choose_move([[0,3],[1,2],[2,5]], [[1,0]], M),
+    M == [[1,2],left].
+
+test(empate_fica_com_a_primeira) :-
+    choose_move([[3,5]], [[3,1],[1,5]], M),
+    M == [[3,5],left].
+
+test(jogada_escolhida_e_sempre_valida) :-
+    forall(between(1, 50, _),
+           ( new_game(P, O, _, _, _),
+             choose_move(P, [], M1),
+             M1 = [Peca1, Lado1],
+             play_piece(Peca1, Lado1, P, [], _, Mesa),
+             ( choose_move(O, Mesa, M2)
+             -> valid_moves(O, Mesa, Moves), memberchk(M2, Moves)
+             ;  playable_pieces(O, Mesa, []) ) )).
+
+:- end_tests(adversario).

@@ -35,7 +35,9 @@
     domino_out/1,      % +Hand
     blocked/4,         % +Player, +Opponent, +Table, +Boneyard
     hand_points/2,     % +Hand, -Points
-    game_over/6        % +Player, +Opponent, +Table, +Boneyard, -Winner, -Points
+    game_over/6,       % +Player, +Opponent, +Table, +Boneyard, -Winner, -Points
+    move_score/4,      % +Move, +Hand, +Table, -Score
+    choose_move/3      % +Hand, +Table, -Move
 ]).
 
 :- use_module(library(lists)).
@@ -241,3 +243,44 @@ game_over(Player, Opponent, Table, Boneyard, Winner, Points) :-
 blocked_result(<, _, OP, player, OP).
 blocked_result(>, PP, _, opponent, PP).
 blocked_result(=, _, _, draw, 0).
+
+
+% ======================================================================
+% Adversário (computador)
+% ======================================================================
+
+%% move_score(+Move, +Hand, +Table, -Score)
+% Dá uma nota para a jogada [Peça, Lado]; quanto maior, melhor.
+% A nota soma três ideias:
+% - Pontos da peça: livrar-se das peças pesadas diminui o prejuízo
+%   se o adversário bater ou o jogo trancar.
+% - Bucha: vale 5 a mais, porque só encaixa num número e
+%   costuma ficar presa na mão.
+% - Opções: o dobro do número de peças que continuam jogáveis
+%   depois da jogada, para não ficar sem saída na próxima vez.
+move_score([Piece, Side], Hand, Table, Score) :-
+    play_piece(Piece, Side, Hand, Table, NewHand, NewTable),
+    Piece = [A,B],
+    ( A =:= B -> Double = 5 ; Double = 0 ),
+    playable_pieces(NewHand, NewTable, Options),
+    length(Options, N),
+    Score is A + B + Double + 2 * N.
+
+%% choose_move(+Hand, +Table, -Move)
+% Escolhe a jogada do computador no formato [Peça, Lado]:
+% a de maior nota em move_score/4.
+% Em caso de empate, fica a que aparece primeiro em valid_moves/3.
+% Falha se não houver jogada; aí o computador precisa comprar
+% (draw_until_playable/6) ou passar a vez (can_pass/3).
+%
+% As notas entram negativas para o keysort, que ordena do menor
+% para o maior e mantém a ordem original nos empates.
+choose_move(Hand, Table, Move) :-
+    valid_moves(Hand, Table, Moves),
+    Moves \== [],
+    findall(Neg-M,
+            ( member(M, Moves),
+              move_score(M, Hand, Table, Score),
+              Neg is -Score ),
+            Scored),
+    keysort(Scored, [_-Move|_]).
