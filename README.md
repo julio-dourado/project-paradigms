@@ -13,7 +13,7 @@ Navegador (Elm)  <--HTTP/JSON-->  FastAPI (Python)  <--janus-->  SWI-Prolog
 ```
 
 - **Prolog** (`backend/prolog/`): toda a lógica do jogo, como distribuir as peças, validar jogadas, comprar, passar a vez, detectar o fim e escolher a jogada do computador.
-- **FastAPI** (`backend/app/`): recebe as requisições do navegador, chama o Prolog pelo [janus](https://www.swi-prolog.org/pldoc/man?section=janus) e devolve JSON.
+- **FastAPI** (`backend/app/`): recebe as requisições do navegador, chama o Prolog pelo [janus](https://www.swi-prolog.org/pldoc/man?section=janus) e devolve JSON (veja [API](#api-fastapi)). Também serve a pasta `frontend/`, então o jogo e a API ficam na mesma origem.
 - **Elm** (`frontend/src/`): a tela do jogo, com a mesa, a mão do jogador e a do oponente. O desenho fica em `View.elm` e `style.css` (veja [Visual](#visual)).
   A lógica da tela fica em `Main.elm`: seleção de peça e ponta, turnos e mensagens de erro. O `Main` guarda o último estado que o backend confirmou e segue o `turn` dele, sem repetir as regras do Prolog.
 
@@ -163,7 +163,7 @@ type alias Config msg =
 
 No `Main.elm` basta converter o modelo para `Props` e chamar `View.view config (toProps model)`. O visual só usa as pontas da mesa (e a `opening`, com a mesa vazia) para destacar peças e desenhar as sombras: quem valida a jogada é o Prolog.
 
-O botão "Passar a vez" fica liberado sempre que é a vez do jogador e a mesa não está vazia, mesmo tendo peça. Ele só fica em destaque quando não há outra saída. Para isso valer no jogo de verdade, o backend precisa aceitar o passe com peça: hoje o `can_pass/3` só deixa passar sem jogada e com o monte vazio.
+O botão "Passar a vez" fica liberado sempre que é a vez do jogador e a mesa não está vazia, mesmo tendo peça. Ele só fica em destaque quando não há outra saída. No jogo de verdade a API segue o `can_pass/3`: o passe com peça na mão ou com monte é recusado (422) com uma mensagem dizendo o motivo, que a tela mostra em `error`.
 
 ### Vitrine
 
@@ -207,16 +207,32 @@ Depois é só abrir `http://localhost:8000`. Para parar, feche a janela. No jogo
 
 ## Como rodar
 
-Requisito: [SWI-Prolog](https://www.swi-prolog.org/download/stable) 9 ou mais novo.
+Requisitos: [SWI-Prolog](https://www.swi-prolog.org/download/stable) 9 ou mais novo, Python 3.10 ou mais novo e, para a tela, [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html) (com Node, dá para instalar com `npm install -g elm@0.19.1-6`).
 
-Testes do Prolog:
+O `Makefile` na raiz junta tudo:
+
+| Comando | O que faz |
+|---|---|
+| `make install` | Cria `backend/.venv` com FastAPI e janus. |
+| `make test` | Testes do Prolog (`test-prolog`) e da API (`test-api`). |
+| `make build` | Compila o Elm: o jogo (`build/main.js`, quando o `Main.elm` existir) e a vitrine (`build/preview.js`). |
+| `make run` | Sobe o backend em `http://localhost:8000`: a API em `/api`, o jogo em `/` e a vitrine em `/preview.html`. |
+| `make preview` | Compila e abre a vitrine, sem backend. |
+
+Sem `make`, os comandos equivalentes:
 
 ```bash
 cd backend/prolog
 swipl -g "consult(test_domino), (run_tests -> halt(0) ; halt(1))"
 ```
 
-Vitrine do visual (precisa do [Elm 0.19.1](https://guide.elm-lang.org/install/elm.html); com Node, dá para instalar com `npm install -g elm@0.19.1-6`):
+```bash
+cd backend
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+.venv/bin/python -m pytest
+.venv/bin/uvicorn app.main:app --reload
+```
 
 ```bash
 cd frontend
@@ -224,7 +240,9 @@ elm make src/Preview.elm --output=build/preview.js
 open preview.html
 ```
 
-Um cenário específico abre direto pelo número no endereço, por exemplo `preview.html#6` para a mesa longa.
+Um cenário específico da vitrine abre direto pelo número no endereço, por exemplo `preview.html#6` para a mesa longa.
+
+O jogo completo abre em `frontend/index.html`, que inicia o `Elm.Main` com `flags = { api = "/api" }` (ou `http://localhost:8000/api`, se aberto direto do disco). Enquanto o `Main.elm` não existir, a página mostra um aviso com o link da vitrine.
 
 Tela do jogo (precisa do backend rodando em `http://localhost:8000`):
 
@@ -237,6 +255,7 @@ open index.html
 Outro endereço de backend vai no próprio link: `index.html?api=http://localhost:9000`. Sem o backend de verdade, dá para usar o [backend falso](#backend-falso).
 
 O backend FastAPI ainda não está no repositório. As instruções dele entram aqui quando for adicionado.
+O relatório do trabalho está em [`RELATORIO.md`](RELATORIO.md).
 
 ## Andamento
 
@@ -248,7 +267,7 @@ O backend FastAPI ainda não está no repositório. As instruções dele entram 
 | 4. Elm: modelo e API | Bruno | `frontend/src/Domino.elm`, `Api.elm` | ⏳ pendente |
 | 5. Elm: lógica da tela | Samuel Ricardo | `frontend/src/Main.elm`, `index.html`, `dev/backend-falso.ps1` | ✅ pronto |
 | 6. Elm: visual | Patrick Anderson Carvalho dos Santos | `frontend/src/View.elm`, `Preview.elm`, `style.css` | ✅ pronto |
-| 7. Integração e documentação | — | `backend/app/`, `Makefile`, `RELATORIO.md` | ⏳ pendente |
+| 7. Integração e documentação | Julio Cesar Almeida Dourado | `backend/app/`, `backend/tests/`, `Makefile`, `frontend/index.html`, `RELATORIO.md` | ✅ pronto |
 
 ## Prazos
 
