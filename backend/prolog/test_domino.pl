@@ -17,5 +17,11 @@ test(sem_repeticao) :-
 test(pecas_ordenadas) :-
     all_pieces(Ps),
     forall(member([A,B], Ps), A =< B).
+    
+test(shuffle_preserva_pecas) :-
+    all_pieces(Ps),
+    shuffle(Ps, S),
+    msort(S, Sorted),
+    msort(Ps, Sorted).
 
 :- end_tests(domino).

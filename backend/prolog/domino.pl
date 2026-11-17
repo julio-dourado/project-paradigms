@@ -9,7 +9,8 @@
 % Termos compostos NÃO atravessam o janus, por isso só usamos listas e átomos.
 
 :- module(domino, [
-    all_pieces/1       % -Pieces
+    all_pieces/1,      % -Pieces
+    shuffle/2           % +Pieces, -Shuffled
 ]).
 
 :- use_module(library(lists)).
@@ -19,3 +20,9 @@
 %  As 28 peças do dominó duplo-seis, sem repetição, sempre com A =< B.
 all_pieces(Pieces) :-
     findall([A,B], ( between(0, 6, A), between(A, 6, B) ), Pieces).
+    
+    
+%% shuffle(+Pieces, -Shuffled)
+%  Embaralha. É não determinístico por natureza: cada chamada dá um resultado.
+shuffle(Pieces, Shuffled) :-
+    random_permutation(Pieces, Shuffled).
