@@ -8,6 +8,10 @@
 %   evitando representar a mesma peça de duas formas diferentes.
 % - As mãos dos jogadores e o monte são listas de peças.
 % - O turno é identificado pelos átomos player ou opponent.
+% - A mesa é a lista das peças jogadas, da ponta esquerda para a direita.
+%   Na mesa, cada peça fica virada de modo a encostar na vizinha:
+%   [[6,5],[5,2],[2,2]] tem pontas 6 (esquerda) e 2 (direita).
+% - O lado da jogada é o átomo left ou right.
 %
 % Utilizamos listas e átomos para facilitar a comunicação com o Janus,
 % que faz a integração entre Prolog e o backend.
@@ -18,7 +22,16 @@
     deal/4,            % +Shuffled, -Player, -Opponent, -Boneyard
     piece_rank/2,      % +Piece, -Rank
     starter/4,         % +Player, +Opponent, -Turn, -Piece
-    new_game/5         % -Player, -Opponent, -Boneyard, -Turn, -StartPiece
+    new_game/5,        % -Player, -Opponent, -Boneyard, -Turn, -StartPiece
+    table_ends/3,      % +Table, -Left, -Right
+    fits/3,            % +Piece, +Table, ?Side
+    valid_moves/3,     % +Hand, +Table, -Moves
+    playable_pieces/3, % +Hand, +Table, -Pieces
+    play_piece/6,      % +Piece, +Side, +Hand, +Table, -NewHand, -NewTable
+    draw/4,            % +Boneyard, +Hand, -NewBoneyard, -NewHand
+    draw_until_playable/6, % +Hand, +Table, +Boneyard, -NewHand, -NewBoneyard, -Drawn
+    can_pass/3,        % +Hand, +Table, +Boneyard
+    next_turn/2        % +Turn, -Next
 ]).
 
 :- use_module(library(lists)).
@@ -82,3 +95,96 @@ new_game(Player, Opponent, Boneyard, Turn, StartPiece) :-
     shuffle(Pieces, Shuffled),
     deal(Shuffled, Player, Opponent, Boneyard),
     starter(Player, Opponent, Turn, StartPiece).
+
+
+% ======================================================================
+% Regras das jogadas
+% ======================================================================
+
+%% table_ends(+Table, -Left, -Right)
+% Devolve os números das duas pontas da mesa.
+% Falha com a mesa vazia, porque ainda não existe ponta.
+table_ends(Table, Left, Right) :-
+    Table = [[Left,_]|_],
+    last(Table, [_,Right]).
+
+%% fits(+Piece, +Table, ?Side)
+% Verdadeiro se a peça pode ser encaixada no lado Side da mesa.
+% Na mesa vazia qualquer peça entra; usamos right para não
+% gerar a mesma jogada duas vezes.
+fits(_, [], right).
+fits(Piece, Table, left) :-
+    table_ends(Table, Left, _),
+    memberchk(Left, Piece).
+fits(Piece, Table, right) :-
+    table_ends(Table, _, Right),
+    memberchk(Right, Piece).
+
+%% valid_moves(+Hand, +Table, -Moves)
+% Lista todas as jogadas possíveis no formato [Peça, Lado].
+% Uma peça que encaixa nas duas pontas aparece duas vezes,
+% uma para cada lado.
+valid_moves(Hand, Table, Moves) :-
+    findall([Piece, Side],
+            ( member(Piece, Hand), fits(Piece, Table, Side) ),
+            Moves).
+
+%% playable_pieces(+Hand, +Table, -Pieces)
+% Lista as peças da mão que podem ser jogadas, sem repetição.
+playable_pieces(Hand, Table, Pieces) :-
+    findall(Piece,
+            ( member(Piece, Hand), once(fits(Piece, Table, _)) ),
+            Pieces).
+
+%% orient(+Side, +Table, +Piece, -Oriented)
+% Vira a peça, se preciso, para o número que encosta na mesa
+% ficar do lado de dentro.
+orient(_, [], Piece, Piece) :- !.
+orient(left, Table, [A,B], Oriented) :-
+    table_ends(Table, Left, _),
+    ( B =:= Left -> Oriented = [A,B] ; Oriented = [B,A] ).
+orient(right, Table, [A,B], Oriented) :-
+    table_ends(Table, _, Right),
+    ( A =:= Right -> Oriented = [A,B] ; Oriented = [B,A] ).
+
+%% play_piece(+Piece, +Side, +Hand, +Table, -NewHand, -NewTable)
+% Joga a peça no lado escolhido: tira da mão e coloca na mesa já virada.
+% Falha se a peça não está na mão ou não encaixa naquele lado.
+% A peça pode vir em qualquer ordem ([5,3] ou [3,5]); na mão
+% ela é procurada na forma crescente.
+play_piece([X,Y], Side, Hand, Table, NewHand, NewTable) :-
+    A is min(X, Y), B is max(X, Y),
+    selectchk([A,B], Hand, NewHand),
+    fits([A,B], Table, Side), !,
+    orient(Side, Table, [A,B], Oriented),
+    place(Side, Oriented, Table, NewTable).
+
+place(left, Piece, Table, [Piece|Table]).
+place(right, Piece, Table, NewTable) :-
+    append(Table, [Piece], NewTable).
+
+%% draw(+Boneyard, +Hand, -NewBoneyard, -NewHand)
+% Compra uma peça do monte. Como o monte já está embaralhado,
+% pega a primeira. Falha se o monte estiver vazio.
+draw([Piece|Boneyard], Hand, Boneyard, NewHand) :-
+    append(Hand, [Piece], NewHand).
+
+%% draw_until_playable(+Hand, +Table, +Boneyard, -NewHand, -NewBoneyard, -Drawn)
+% Compra do monte até ter uma peça jogável ou o monte acabar.
+% Drawn é a lista das peças compradas, na ordem da compra.
+draw_until_playable(Hand, Table, Boneyard, Hand, Boneyard, []) :-
+    ( Boneyard == [] ; playable_pieces(Hand, Table, [_|_]) ), !.
+draw_until_playable(Hand, Table, Boneyard, NewHand, NewBoneyard, [Piece|Drawn]) :-
+    draw(Boneyard, Hand, Boneyard1, Hand1),
+    last(Hand1, Piece),
+    draw_until_playable(Hand1, Table, Boneyard1, NewHand, NewBoneyard, Drawn).
+
+%% can_pass(+Hand, +Table, +Boneyard)
+% Só pode passar a vez quem não tem jogada e não tem mais o que comprar.
+can_pass(Hand, Table, []) :-
+    playable_pieces(Hand, Table, []).
+
+%% next_turn(+Turn, -Next)
+% Alterna a vez entre o jogador e o computador.
+next_turn(player, opponent).
+next_turn(opponent, player).
