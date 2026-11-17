@@ -10,7 +10,8 @@
 
 :- module(domino, [
     all_pieces/1,      % -Pieces
-    shuffle/2           % +Pieces, -Shuffled
+    shuffle/2,           % +Pieces, -Shuffled
+    deal/4             % +Shuffled, -Player, -Opponent, -Boneyard
 ]).
 
 :- use_module(library(lists)).
@@ -26,3 +27,13 @@ all_pieces(Pieces) :-
 %  Embaralha. É não determinístico por natureza: cada chamada dá um resultado.
 shuffle(Pieces, Shuffled) :-
     random_permutation(Pieces, Shuffled).
+    
+%% deal(+Shuffled, -Player, -Opponent, -Boneyard)
+%  7 peças para cada jogador; as 14 restantes formam o monte (boneyard).
+%  Aqui o Prolog brilha: descrevemos a forma do resultado e a unificação
+%  faz a divisão da lista.
+deal(Shuffled, Player, Opponent, Boneyard) :-
+    length(Player, 7),
+    length(Opponent, 7),
+    append(Player, Rest, Shuffled),
+    append(Opponent, Boneyard, Rest).

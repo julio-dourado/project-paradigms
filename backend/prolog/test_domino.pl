@@ -23,5 +23,17 @@ test(shuffle_preserva_pecas) :-
     shuffle(Ps, S),
     msort(S, Sorted),
     msort(Ps, Sorted).
+    
+test(deal_tamanhos) :-
+    all_pieces(Ps), shuffle(Ps, S),
+    deal(S, P, O, B),
+    length(P, 7), length(O, 7), length(B, 14).
+
+test(deal_nao_perde_nem_duplica) :-
+    all_pieces(Ps), shuffle(Ps, S),
+    deal(S, P, O, B),
+    append([P, O, B], Todas),
+    msort(Todas, Sorted),
+    msort(Ps, Sorted).
 
 :- end_tests(domino).
