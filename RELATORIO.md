@@ -10,10 +10,10 @@
 | Samuel Ricardo [sobrenome] | [matrícula] | [turma] | [@usuario do Samuel] |
 | Bruno Oliveira [sobrenome] | [matrícula] | [turma] | @BrunoOLiveirax |
 | Gustavo Henrique [sobrenome] | [matrícula] | [turma] | @GustavoHenriqueRS |
-| [Nome completo de VituuDias: confirmar se é integrante] | [matrícula] | [turma] | @VituuDias |
+| [Nome completo de VituuDias] | [matrícula] | [turma] | @VituuDias |
 
 - **Nome do projeto:** Dominó em Prolog + Elm
-- **Nome do grupo:** [nome do grupo]
+- **Nome do grupo:** Grupo X
 - **Repositório:** https://github.com/julio-dourado/project-paradigms
 - **Commit ou tag entregue:** [hash do commit final ou tag]
 - **Ponto de partida:** outro jogo conhecido
