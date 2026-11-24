@@ -1,8 +1,9 @@
 """Ponte entre o Python e as regras do jogo em Prolog.
 
 Cada função daqui chama um predicado do módulo ``domino``
-(``backend/prolog/domino.pl``) pelo janus e devolve tipos simples do
-Python. Nenhuma regra do dominó é decidida aqui: este arquivo só
+(``backend/prolog/domino.pl``) ou do módulo ``powers``
+(``backend/prolog/powers.pl``, os poderes especiais) pelo janus e devolve
+tipos simples do Python. Nenhuma regra do dominó é decidida aqui: este arquivo só
 traduz os dados de um lado para o outro.
 
 Sobre a conversão do janus:
@@ -30,6 +31,7 @@ Piece = list[int]
 Hand = list[Piece]
 
 PROLOG_FILE = Path(__file__).resolve().parent.parent / "prolog" / "domino.pl"
+POWERS_FILE = PROLOG_FILE.with_name("powers.pl")
 
 _lock = threading.Lock()
 _loaded = False
@@ -39,6 +41,7 @@ def _ensure_loaded() -> None:
     global _loaded
     if not _loaded:
         janus.consult(str(PROLOG_FILE))
+        janus.consult(str(POWERS_FILE))
         _loaded = True
 
 
@@ -174,3 +177,143 @@ def hint(hand: Hand, table: Hand, boneyard: Hand) -> tuple[Piece, str] | str:
     if isinstance(h, list):
         return h[0], h[1]
     return h
+
+
+# ----------------------------------------------------------------------
+# Poderes especiais (módulo ``powers``)
+# ----------------------------------------------------------------------
+#
+# O módulo ``powers`` trabalha com o estado como uma lista de 8 itens
+# (o janus só passa listas, números e átomos). ``_pack`` monta essa
+# lista a partir do dicionário da API e ``_unpack`` faz o caminho
+# contrário. Strings que chegam do navegador (``"left"``, ``"freeze"``)
+# viram átomos em ``powers:atomize/2``.
+
+State = dict[str, Any]
+
+_STATE_KEYS = (
+    "player_hand",
+    "opponent_hand",
+    "table",
+    "boneyard",
+    "player_powers",
+    "opponent_powers",
+    "effects",
+    "turn",
+)
+
+
+def _pack(state: State) -> list[Any]:
+    return [state[k] for k in _STATE_KEYS]
+
+
+def _unpack(packed: list[Any]) -> State:
+    return dict(zip(_STATE_KEYS, packed))
+
+
+def _arg(arg: Any) -> Any:
+    return "none" if arg is None else arg
+
+
+_LOAD = "powers:atomize(SJ, S0), atom_string(Who, WhoS), "
+
+
+def deal_powers() -> tuple[list[str], list[str]]:
+    """``deal_powers/2``: poderes sorteados para o jogador e para o computador."""
+    r = _once("powers:deal_powers(Mine, Theirs)")
+    assert r is not None, "deal_powers/2 não deveria falhar"
+    return r["Mine"], r["Theirs"]
+
+
+def legal_moves(who: str, state: State) -> list[tuple[Piece, str]]:
+    """``legal_moves/3``: jogadas ``(peça, lado)`` permitidas, com congelamento e chamas."""
+    r = _once(_LOAD + "powers:legal_moves(Who, S0, Moves)", SJ=_pack(state), WhoS=who)
+    assert r is not None
+    return [(m[0], m[1]) for m in r["Moves"]]
+
+
+def must_draw(who: str, state: State) -> bool:
+    """``must_draw/2``: sem jogada (ou com a maldição) e ainda com monte."""
+    return _holds(_LOAD + "powers:must_draw(Who, S0)", SJ=_pack(state), WhoS=who)
+
+
+def can_pass_now(who: str, state: State) -> bool:
+    """``can_pass_now/2``."""
+    return _holds(_LOAD + "powers:can_pass_now(Who, S0)", SJ=_pack(state), WhoS=who)
+
+
+def pw_play(who: str, piece: Piece, side: str, state: State) -> State | None:
+    """``powers:play/5``. ``None`` se não for a vez, se deve comprar ou se a jogada não vale."""
+    r = _once(
+        _LOAD + "atom_string(Side, SideS), powers:play(Who, Piece, Side, S0, S)",
+        SJ=_pack(state),
+        WhoS=who,
+        Piece=piece,
+        SideS=side,
+    )
+    return None if r is None else _unpack(r["S"])
+
+
+def pw_draw_one(who: str, state: State) -> tuple[State, Piece] | None:
+    """``powers:draw_one/4``. ``None`` se não for obrigado a comprar."""
+    r = _once(_LOAD + "powers:draw_one(Who, S0, S, Piece)", SJ=_pack(state), WhoS=who)
+    return None if r is None else (_unpack(r["S"]), r["Piece"])
+
+
+def pw_pass(who: str, state: State) -> State | None:
+    """``powers:pass/3``."""
+    r = _once(_LOAD + "powers:pass(Who, S0, S)", SJ=_pack(state), WhoS=who)
+    return None if r is None else _unpack(r["S"])
+
+
+def can_use(who: str, power: str, arg: Any, state: State) -> bool:
+    """``powers:can_use/4``."""
+    return _holds(
+        _LOAD + "atom_string(Power, PowerS), powers:atomize(ArgJ, Arg), powers:can_use(Who, Power, Arg, S0)",
+        SJ=_pack(state),
+        WhoS=who,
+        PowerS=power,
+        ArgJ=_arg(arg),
+    )
+
+
+def use_power(who: str, power: str, arg: Any, state: State) -> tuple[State, list[Any]] | None:
+    """``powers:use_power/6``. Devolve ``(estado, outcome)``; ``None`` se não puder usar.
+
+    ``outcome``: ``["applied"]``, ``["shielded"]``, ``["revealed", buchas]``
+    ou ``["swapped", saiu, entrou]``.
+    """
+    r = _once(
+        _LOAD + "atom_string(Power, PowerS), powers:atomize(ArgJ, Arg), powers:use_power(Who, Power, Arg, S0, S, Out)",
+        SJ=_pack(state),
+        WhoS=who,
+        PowerS=power,
+        ArgJ=_arg(arg),
+    )
+    return None if r is None else (_unpack(r["S"]), r["Out"])
+
+
+def revealed_pieces(who: str, state: State) -> list[Piece]:
+    """``revealed_pieces/3``: buchas de ``who`` que a Sobrecarga revelou."""
+    r = _once(_LOAD + "powers:revealed_pieces(Who, S0, Pieces)", SJ=_pack(state), WhoS=who)
+    assert r is not None
+    return r["Pieces"]
+
+
+def pw_hint(who: str, state: State) -> tuple[Piece, str] | str:
+    """``hint_for/3``: ``(peça, lado)``, ``"draw"`` ou ``"pass"``, respeitando as restrições."""
+    r = _once(_LOAD + "powers:hint_for(Who, S0, Hint)", SJ=_pack(state), WhoS=who)
+    assert r is not None, "hint_for/3 sempre tem resposta"
+    h = r["Hint"]
+    return (h[0], h[1]) if isinstance(h, list) else h
+
+
+def computer_turn(who: str, state: State) -> tuple[State, list[list[Any]]]:
+    """``computer_turn/4``: o turno inteiro do computador e o que aconteceu nele.
+
+    Eventos: ``["power", who, poder, arg, outcome]``, ``["draw", who, peças]``,
+    ``["play", who, peça, lado]`` e ``["pass", who]``.
+    """
+    r = _once(_LOAD + "powers:computer_turn(Who, S0, S, Events)", SJ=_pack(state), WhoS=who)
+    assert r is not None, "computer_turn/4 não deveria falhar na vez do computador"
+    return _unpack(r["S"]), r["Events"]

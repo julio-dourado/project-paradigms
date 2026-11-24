@@ -1,5 +1,6 @@
 module View exposing
     ( Piece, End(..), Status(..), Winner(..), Hint(..)
+    , Power(..), PowerArg(..), PowersView, powerName
     , Props, Config
     , view
     )
@@ -17,6 +18,11 @@ Todas as peças são desenhadas em SVG aqui mesmo: não há imagem externa.
 # Tipos
 
 @docs Piece, End, Status, Winner, Hint
+
+
+# Poderes especiais
+
+@docs Power, PowerArg, PowersView, powerName
 
 
 # Entrada e saída
@@ -84,6 +90,56 @@ type Hint
     | PassHint
 
 
+{-| Os poderes especiais (`freeze`, `curse`, ... no Prolog). Cada jogador
+recebe alguns no começo da partida e cada um vale uma vez.
+-}
+type Power
+    = Freeze
+    | Curse
+    | Overload
+    | Shield
+    | Recovery
+    | Teleport
+    | TimeWarp
+    | Swap
+    | Flames
+
+
+{-| O que o jogador escolhe ao usar um poder: uma ponta (`Freeze`), um
+número de 0 a 6 (`Flames`), uma peça da mão (`Swap`) ou nada.
+-}
+type PowerArg
+    = NoArg
+    | EndArg End
+    | NumberArg Int
+    | PieceArg Piece
+
+
+{-| O painel de poderes. Tudo já vem decidido pelo backend (Prolog):
+
+  - `mine`: poderes que o jogador ainda tem;
+  - `usable`: os que dá para usar agora (um por turno, só na vez dele);
+  - `opponentCount`: quantos poderes o computador ainda tem (quais, ele não conta);
+  - `effects`: frases dos efeitos ativos ("Congelamento: ...");
+  - `revealed`: buchas do computador reveladas pela Sobrecarga;
+  - `moves`: as jogadas permitidas agora, já com congelamento e chamas.
+    `Nothing` (backend sem poderes) cai na regra de encaixe simples;
+  - `mustDraw`: se a vez é de comprar (sem jogada, ou Maldição pendente);
+  - `picking`: poder que está esperando o jogador escolher ponta, número ou peça.
+
+-}
+type alias PowersView =
+    { mine : List Power
+    , usable : List Power
+    , opponentCount : Int
+    , effects : List String
+    , revealed : List Piece
+    , moves : Maybe (List ( Piece, End ))
+    , mustDraw : Maybe Bool
+    , picking : Maybe Power
+    }
+
+
 {-| Tudo o que a tela precisa para ser desenhada.
 
   - `opponentHand`: só aparece virada para baixo; é revelada no fim.
@@ -92,7 +148,12 @@ type Hint
   - `lastPlayed`: a peça mais nova da mesa, que ganha um contorno dourado.
   - `opening`: a peça que abre a partida (a `StartPiece` do `new_game/5`).
     Com a mesa vazia, só ela pode ser jogada. `Nothing` libera qualquer peça.
-  - `log`: frases do lance a lance, a mais recente primeiro.
+  - `log`: frases do lance a lance, a mais recente primeiro. As que contam
+    um poder ("Você usou…", "O computador usou…") ganham destaque.
+  - `rivalPower`: a frase do poder que o computador acabou de usar; vira uma
+    faixa de aviso na mesa até o jogador jogar.
+  - `powers`: o painel de poderes; `Nothing` esconde o painel e usa só as
+    regras de encaixe do dominó comum.
 
 -}
 type alias Props =
@@ -108,6 +169,8 @@ type alias Props =
     , log : List String
     , score : { player : Int, opponent : Int }
     , error : Maybe String
+    , rivalPower : Maybe String
+    , powers : Maybe PowersView
     }
 
 
@@ -117,6 +180,9 @@ Clique numa peça da mão: se ela só encaixa numa ponta, já vem `onPlay`;
 se encaixa nas duas, vem `onSelect (Just peça)` e o jogador escolhe a ponta.
 Com a mesa vazia, a jogada vai para `RightEnd`, como no `fits/3`.
 
+Poderes: `onPowerPick (Just poder)` abre a escolha de ponta, número ou peça
+(`Nothing` cancela); `onPowerUse poder arg` usa o poder de vez.
+
 -}
 type alias Config msg =
     { onSelect : Maybe Piece -> msg
@@ -125,6 +191,8 @@ type alias Config msg =
     , onPass : msg
     , onHint : msg
     , onNewGame : msg
+    , onPowerPick : Maybe Power -> msg
+    , onPowerUse : Power -> PowerArg -> msg
     }
 
 
@@ -141,9 +209,11 @@ view cfg props =
         , viewHeader cfg props
         , viewError props.error
         , Html.main_ [ HA.class "jogo" ]
-            [ Html.section [ HA.class "mesa", HA.attribute "aria-label" "Mesa" ]
+            [ viewPowersSide cfg props
+            , Html.section [ HA.class "mesa", HA.attribute "aria-label" "Mesa" ]
                 [ Html.div [ HA.class "feltro" ]
                     [ viewOpponent props
+                    , viewRivalPower props.rivalPower
                     , viewTableArea cfg props
                     , viewTableFooter props
                     ]
@@ -219,8 +289,12 @@ viewError error =
 viewOpponent : Props -> Html msg
 viewOpponent props =
     let
-        revealed =
+        finished =
             isFinished props.status
+
+        -- buchas que a Sobrecarga mostrou
+        shown =
+            props.powers |> Maybe.map .revealed |> Maybe.withDefault []
 
         n =
             List.length props.opponentHand
@@ -232,8 +306,24 @@ viewOpponent props =
             ]
         , Html.Keyed.node "div"
             [ HA.class "oponente__mao" ]
-            (List.indexedMap (\i p -> ( pieceKey p, opponentTile revealed n i p )) props.opponentHand)
+            (List.indexedMap (\i p -> ( pieceKey p, opponentTile (finished || List.any (same p) shown) n i p )) props.opponentHand)
         ]
+
+
+{-| A faixa de aviso quando o computador usa um poder: fica sob a mão dele,
+bem à vista, até o jogador jogar.
+-}
+viewRivalPower : Maybe String -> Html msg
+viewRivalPower alert =
+    case alert of
+        Just sentence ->
+            Html.div [ HA.class "alerta-poder", HA.attribute "role" "status" ]
+                [ Html.span [ HA.class "alerta-poder__selo" ] [ Html.text "✦ Poder do computador" ]
+                , Html.span [ HA.class "alerta-poder__texto" ] [ Html.text sentence ]
+                ]
+
+        Nothing ->
+            Html.text ""
 
 
 opponentTile : Bool -> Int -> Int -> Piece -> Html msg
@@ -844,7 +934,7 @@ viewActions cfg props =
             playerTurn && List.isEmpty (playablePieces props)
 
         canDraw =
-            noMove && props.boneyard > 0
+            drawAllowed props
 
         canPass =
             playerTurn && not (List.isEmpty props.table)
@@ -910,12 +1000,291 @@ actionButton enabled hinted extra msg label =
 
 
 
--- LATERAL: MONTE E LANCE A LANCE
+-- PODERES
 
 
+{-| O nome do poder, como aparece na tela.
+-}
+powerName : Power -> String
+powerName power =
+    case power of
+        Freeze ->
+            "Congelamento"
+
+        Curse ->
+            "Maldição"
+
+        Overload ->
+            "Sobrecarga"
+
+        Shield ->
+            "Escudo"
+
+        Recovery ->
+            "Recuperação"
+
+        Teleport ->
+            "Teletransporte"
+
+        TimeWarp ->
+            "Manipulação do tempo"
+
+        Swap ->
+            "Troca"
+
+        Flames ->
+            "Chamas"
+
+
+powerText : Power -> String
+powerText power =
+    case power of
+        Freeze ->
+            "Escolha uma ponta da mesa: o adversário não joga nela no próximo turno dele."
+
+        Curse ->
+            "Na primeira vez que o adversário comprar do monte, ele leva uma peça a mais."
+
+        Overload ->
+            "O adversário revela as buchas (peças duplas) que tiver na mão."
+
+        Shield ->
+            "Automático: anula o primeiro poder que o adversário usar contra você."
+
+        Recovery ->
+            "Troca a sua peça mais pesada por uma aleatória do monte."
+
+        Teleport ->
+            "Ignora um Congelamento ou as Chamas que pesam sobre você."
+
+        TimeWarp ->
+            "Joga duas peças seguidas, se a segunda também encaixar."
+
+        Swap ->
+            "Escolha uma peça da sua mão e troque por uma aleatória do monte."
+
+        Flames ->
+            "Escolha um número: a próxima peça do adversário deve tê-lo, se possível."
+
+
+powerKind : Power -> ( String, String )
+powerKind power =
+    case power of
+        Freeze ->
+            ( "ataque", "Ataque" )
+
+        Curse ->
+            ( "ataque", "Ataque" )
+
+        Overload ->
+            ( "ataque", "Ataque" )
+
+        Shield ->
+            ( "defesa", "Defesa" )
+
+        Recovery ->
+            ( "defesa", "Defesa" )
+
+        Teleport ->
+            ( "defesa", "Defesa" )
+
+        TimeWarp ->
+            ( "estrategia", "Estratégia" )
+
+        Swap ->
+            ( "estrategia", "Estratégia" )
+
+        Flames ->
+            ( "estrategia", "Estratégia" )
+
+
+{-| Poderes que pedem uma escolha antes de valer.
+-}
+needsChoice : Power -> Bool
+needsChoice power =
+    power == Freeze || power == Flames || power == Swap
+
+
+viewPowers : Config msg -> Props -> Html msg
+viewPowers cfg props =
+    case props.powers of
+        Nothing ->
+            Html.text ""
+
+        Just pw ->
+            if List.isEmpty pw.mine && pw.opponentCount == 0 && List.isEmpty pw.effects then
+                Html.text ""
+
+            else
+                Html.div [ HA.class "cartao poderes" ]
+                    ([ Html.h2 [ HA.class "lateral__titulo" ] [ Html.text "Poderes" ]
+                     , Html.div [ HA.class "poderes__lista" ] (List.map (powerButton cfg props pw) pw.mine)
+                     ]
+                        ++ viewPicker cfg props pw
+                        ++ [ Html.p [ HA.class "poderes__rival" ]
+                                [ Html.text
+                                    ("Computador: "
+                                        ++ String.fromInt pw.opponentCount
+                                        ++ (if pw.opponentCount == 1 then
+                                                " poder"
+
+                                            else
+                                                " poderes"
+                                           )
+                                    )
+                                ]
+                           ]
+                        ++ viewEffects pw.effects
+                    )
+
+
+powerButton : Config msg -> Props -> PowersView -> Power -> Html msg
+powerButton cfg props pw power =
+    let
+        enabled =
+            props.status == PlayerTurn && List.member power pw.usable
+
+        picking =
+            pw.picking == Just power
+
+        ( kindClass, kindLabel ) =
+            powerKind power
+
+        click =
+            if needsChoice power then
+                cfg.onPowerPick
+                    (if picking then
+                        Nothing
+
+                     else
+                        Just power
+                    )
+
+            else
+                cfg.onPowerUse power NoArg
+    in
+    Html.button
+        ([ htmlClasses
+            [ ( "poder", True )
+            , ( "poder--" ++ kindClass, True )
+            , ( "poder--escolhendo", picking )
+            , ( "poder--passivo", power == Shield )
+            ]
+         , HA.disabled (not enabled)
+         , HA.title (powerText power)
+         ]
+            ++ (if enabled then
+                    [ HE.onClick click ]
+
+                else
+                    []
+               )
+        )
+        [ Html.span [ HA.class "poder__topo" ]
+            [ Html.span [ HA.class "poder__nome" ] [ Html.text (powerName power) ]
+            , Html.span [ HA.class "poder__tipo" ] [ Html.text kindLabel ]
+            ]
+        , Html.span [ HA.class "poder__texto" ] [ Html.text (powerText power) ]
+        ]
+
+
+viewPicker : Config msg -> Props -> PowersView -> List (Html msg)
+viewPicker cfg props pw =
+    case pw.picking of
+        Nothing ->
+            []
+
+        Just power ->
+            [ Html.div [ HA.class "poderes__escolha" ]
+                (Html.p [ HA.class "poderes__pergunta" ] [ Html.text (pickQuestion power) ]
+                    :: pickOptions cfg props power
+                    ++ [ Html.button [ HA.class "botao botao--fantasma", HE.onClick (cfg.onPowerPick Nothing) ]
+                            [ Html.text "Cancelar" ]
+                       ]
+                )
+            ]
+
+
+pickQuestion : Power -> String
+pickQuestion power =
+    case power of
+        Freeze ->
+            "Qual ponta congelar?"
+
+        Flames ->
+            "Qual número o adversário deve jogar?"
+
+        Swap ->
+            "Qual peça trocar?"
+
+        _ ->
+            ""
+
+
+pickOptions : Config msg -> Props -> Power -> List (Html msg)
+pickOptions cfg props power =
+    case power of
+        Freeze ->
+            case tableEnds props.table of
+                Just ( l, r ) ->
+                    [ Html.button [ HA.class "botao botao--ponta", HE.onClick (cfg.onPowerUse Freeze (EndArg LeftEnd)) ]
+                        [ Html.text ("◀ Ponta " ++ String.fromInt l) ]
+                    , Html.button [ HA.class "botao botao--ponta", HE.onClick (cfg.onPowerUse Freeze (EndArg RightEnd)) ]
+                        [ Html.text ("Ponta " ++ String.fromInt r ++ " ▶") ]
+                    ]
+
+                Nothing ->
+                    []
+
+        Flames ->
+            List.map
+                (\n ->
+                    Html.button [ HA.class "botao botao--numero", HE.onClick (cfg.onPowerUse Flames (NumberArg n)) ]
+                        [ Html.text (String.fromInt n) ]
+                )
+                (List.range 0 6)
+
+        Swap ->
+            List.map
+                (\( a, b ) ->
+                    Html.button [ HA.class "botao botao--numero", HE.onClick (cfg.onPowerUse Swap (PieceArg ( a, b ))) ]
+                        [ Html.text (String.fromInt a ++ "|" ++ String.fromInt b) ]
+                )
+                props.playerHand
+
+        _ ->
+            []
+
+
+viewEffects : List String -> List (Html msg)
+viewEffects effects =
+    if List.isEmpty effects then
+        []
+
+    else
+        [ Html.ul [ HA.class "poderes__efeitos", HA.attribute "aria-label" "Efeitos ativos" ]
+            (List.map (\note -> Html.li [] [ Html.text note ]) effects)
+        ]
+
+
+
+-- LATERAIS: PODERES (esquerda), MONTE E LANCE A LANCE (direita)
+
+
+{-| Coluna da esquerda: só os poderes, num cartão sempre à vista.
+-}
+viewPowersSide : Config msg -> Props -> Html msg
+viewPowersSide cfg props =
+    Html.aside [ HA.class "lateral lateral--poderes", HA.attribute "aria-label" "Poderes" ]
+        [ viewPowers cfg props
+        ]
+
+
+{-| Coluna da direita: o monte e o lance a lance.
+-}
 viewSide : Config msg -> Props -> Html msg
 viewSide cfg props =
-    Html.aside [ HA.class "lateral" ]
+    Html.aside [ HA.class "lateral", HA.attribute "aria-label" "Monte e lance a lance" ]
         [ viewBoneyard cfg props
         , viewLog props.log
         ]
@@ -925,7 +1294,7 @@ viewBoneyard : Config msg -> Props -> Html msg
 viewBoneyard cfg props =
     let
         canDraw =
-            props.status == PlayerTurn && List.isEmpty (playablePieces props) && props.boneyard > 0
+            drawAllowed props
 
         pile =
             List.take (min 7 props.boneyard) pileSpots
@@ -1005,8 +1374,24 @@ viewLog log =
           else
             Html.Keyed.node "ol"
                 [ HA.class "registro__lista", HA.attribute "aria-live" "polite" ]
-                (List.indexedMap (\i line -> ( String.fromInt (total - i), Html.li [] [ Html.text line ] )) log)
+                (List.indexedMap (\i line -> ( String.fromInt (total - i), Html.li [ HA.class (logClass line) ] [ Html.text line ] )) log)
         ]
+
+
+
+{-| Linhas que contam o uso de um poder ganham destaque no lance a lance:
+laranja quando foi o computador, dourado quando foi você.
+-}
+logClass : String -> String
+logClass line =
+    if String.startsWith "O computador usou " line then
+        "registro__poder registro__poder--rival"
+
+    else if String.startsWith "Você usou " line then
+        "registro__poder registro__poder--voce"
+
+    else
+        ""
 
 
 
@@ -1278,6 +1663,27 @@ playablePieces props =
 -}
 fitsFor : Props -> Piece -> List End
 fitsFor props p =
+    case props.powers |> Maybe.andThen .moves of
+        Just moves ->
+            -- o backend já aplicou congelamento, chamas e a abertura
+            List.filterMap
+                (\( q, end ) ->
+                    if same q p then
+                        Just end
+
+                    else
+                        Nothing
+                )
+                moves
+
+        Nothing ->
+            fitsForPlain props p
+
+
+{-| A regra de encaixe simples, sem poderes.
+-}
+fitsForPlain : Props -> Piece -> List End
+fitsForPlain props p =
     case ( props.table, props.opening ) of
         ( [], Just o ) ->
             if same o p then
@@ -1288,6 +1694,23 @@ fitsFor props p =
 
         _ ->
             fitsAt props.table p
+
+
+{-| Pode comprar? Com poderes, quem decide é o backend (`must_draw/2`: sem
+jogada, ou Maldição pendente); sem poderes, é "nenhuma peça encaixa".
+-}
+drawAllowed : Props -> Bool
+drawAllowed props =
+    let
+        must =
+            case props.powers |> Maybe.andThen .mustDraw of
+                Just m ->
+                    m
+
+                Nothing ->
+                    List.isEmpty (playablePieces props)
+    in
+    props.status == PlayerTurn && props.boneyard > 0 && must
 
 
 orientRight : Int -> Piece -> Piece

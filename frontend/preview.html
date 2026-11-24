@@ -20,6 +20,8 @@
       padding: 5px 11px; border-radius: 999px; border: 1px solid var(--linha);
       background: transparent; color: var(--texto-suave); font-size: 12.5px; cursor: pointer;
     }
+    /* A barra ocupa ~46px; o jogo ocupa o resto da janela. */
+    @media (min-width: 1001px) { .domino { height: calc(100dvh - 46px); } }
     .vitrine__botao:hover { color: var(--texto); }
     .vitrine__botao--ativo { background: var(--ouro-suave); border-color: rgba(244,197,82,.5); color: var(--texto); }
   </style>

@@ -149,13 +149,14 @@ button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
 
 .jogo {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(230px, 270px) minmax(0, 1fr) minmax(230px, 270px);
   grid-template-areas:
-    "mesa lateral"
-    "mao  lateral";
-  gap: 18px 24px;
-  align-items: start;
+    "poderes mesa lateral"
+    "poderes mao  lateral";
+  gap: 16px 20px;
+  align-items: stretch;
 }
+
 
 /* ---------- Mesa: madeira por fora, feltro por dentro ---------- */
 
@@ -178,7 +179,7 @@ button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 440px;
+  min-height: min(440px, 55vh);
   padding: 16px 18px 14px;
   border-radius: 20px;
   background:
@@ -423,7 +424,8 @@ button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
 
 /* ---------- Lateral: monte e lance a lance ---------- */
 
-.lateral { grid-area: lateral; display: flex; flex-direction: column; gap: 18px; }
+.lateral { grid-area: lateral; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lateral--poderes { grid-area: poderes; }
 
 .cartao {
   padding: 16px 18px 18px;
@@ -468,7 +470,7 @@ button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
   display: flex;
   flex-direction: column;
   gap: 9px;
-  max-height: 320px;
+  max-height: min(320px, 38vh);
   overflow-y: auto;
 }
 .registro__lista li {
@@ -480,6 +482,62 @@ button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
   animation: entrar 0.35s both;
 }
 .registro__lista li:first-child { color: var(--texto); }
+
+/* Poder usado: destaque no lance a lance (laranja = computador, dourado = você) */
+.registro__lista li.registro__poder {
+  --cor: var(--ouro);
+  margin: 0 -6px;
+  padding: 7px 10px 7px 28px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--cor) 45%, transparent);
+  background: color-mix(in srgb, var(--cor) 14%, transparent);
+  color: var(--texto);
+  font-weight: 600;
+}
+.registro__lista li.registro__poder--rival { --cor: var(--alerta); }
+.registro__lista li.registro__poder::before {
+  content: "✦";
+  left: 9px;
+  top: 7px;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  color: var(--cor);
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+/* Faixa na mesa: o computador acabou de usar um poder */
+.alerta-poder {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0 auto;
+  max-width: min(560px, 92%);
+  padding: 8px 18px 9px;
+  border-radius: 14px;
+  border: 1px solid rgba(226, 105, 76, 0.7);
+  background: rgba(40, 14, 8, 0.78);
+  box-shadow: 0 0 0 0 rgba(226, 105, 76, 0.55), 0 8px 22px rgba(0, 0, 0, 0.4);
+  text-align: center;
+  animation: entrar 0.35s both, alerta-pulso 1.6s ease-out 0.2s 2;
+}
+.alerta-poder__selo {
+  color: var(--alerta);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.alerta-poder__texto { color: var(--texto); font-size: 14px; font-weight: 600; line-height: 1.3; }
+
+@keyframes alerta-pulso {
+  0% { box-shadow: 0 0 0 0 rgba(226, 105, 76, 0.6), 0 8px 22px rgba(0, 0, 0, 0.4); }
+  100% { box-shadow: 0 0 0 14px rgba(226, 105, 76, 0), 0 8px 22px rgba(0, 0, 0, 0.4); }
+}
 .registro__lista li::before {
   content: "";
   position: absolute;
@@ -494,6 +552,81 @@ button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
 @keyframes entrar {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: none; }
+}
+
+/* ---------- Poderes especiais ---------- */
+
+.poderes__lista { display: flex; flex-direction: column; gap: 8px; }
+
+.poder {
+  --cor: var(--ouro);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 12px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 4px solid var(--cor);
+  background: rgba(255, 255, 255, 0.045);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s, opacity 0.2s;
+}
+.poder--ataque { --cor: var(--alerta); }
+.poder--defesa { --cor: #5fb7a1; }
+.poder--estrategia { --cor: var(--ouro); }
+
+.poder:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.poder:active:not(:disabled) { transform: translateY(1px); }
+.poder:disabled { opacity: 0.4; cursor: not-allowed; }
+.poder--passivo:disabled { opacity: 0.75; cursor: default; }
+.poder--escolhendo { background: var(--ouro-suave); border-color: rgba(244, 197, 82, 0.6); border-left-color: var(--cor); }
+
+.poder__topo { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.poder__nome { font-weight: 700; font-size: 14px; }
+.poder__tipo {
+  color: var(--cor);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.poder__texto { color: var(--texto-suave); font-size: 12.5px; line-height: 1.35; }
+
+.poderes__escolha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px dashed rgba(244, 197, 82, 0.4);
+}
+.poderes__pergunta { flex-basis: 100%; margin: 0; font-size: 13.5px; font-weight: 600; }
+
+.botao--numero { min-width: 42px; padding: 8px 12px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.poderes__rival { margin: 12px 0 0; color: var(--texto-suave); font-size: 13px; }
+
+.poderes__efeitos {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.poderes__efeitos li {
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(226, 105, 76, 0.14);
+  border: 1px solid rgba(226, 105, 76, 0.35);
+  color: var(--texto);
+  font-size: 12.5px;
+  line-height: 1.35;
 }
 
 /* ---------- Fim de jogo ---------- */
@@ -593,10 +726,103 @@ button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
 @media (max-width: 1000px) {
   .jogo {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "mesa" "mao" "lateral";
+    grid-template-areas: "mesa" "mao" "poderes" "lateral";
   }
   .lateral { flex-direction: row; }
   .lateral > * { flex: 1; min-width: 0; }
+  .poderes__lista { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+}
+
+/* ---------- Telas largas: tudo cabe numa tela, sem rolar a página ----------
+   Esquerda: poderes. Centro: mesa e sua mão. Direita: monte e lance a lance.
+   A altura é a da janela; a cadeia de peças e a mão encolhem para caber. */
+
+@media (min-width: 1001px) {
+  html, body { height: 100%; overflow: hidden; }
+
+  .domino {
+    display: flex;
+    flex-direction: column;
+    max-width: 1700px;
+    height: 100vh;
+    height: 100dvh;
+    padding: 12px 22px 14px;
+  }
+
+  .topo { margin-bottom: 10px; flex: none; }
+  .marca__logo { width: 38px; height: 38px; }
+  .marca__nome { font-size: 26px; }
+  .marca__sub { margin-top: 3px; font-size: 12px; }
+  .placar { padding: 5px 18px; }
+  .placar__num { font-size: 22px; }
+  .aviso { margin-bottom: 10px; padding: 8px 14px; flex: none; }
+
+  .jogo {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: 270px minmax(0, 1fr) 260px;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "poderes mesa lateral"
+      "poderes mao  lateral";
+    gap: 10px 20px;
+    align-items: stretch;
+  }
+
+  /* Colunas laterais */
+  .lateral { overflow: hidden; gap: 12px; min-height: 0; }
+  .cartao { padding: 12px 14px 14px; }
+  .lateral__titulo { margin-bottom: 8px; font-size: 16px; }
+
+  /* Esquerda: poderes, sempre à vista; só rola por dentro se não couber */
+  .lateral--poderes { justify-content: flex-start; }
+  .poderes { flex: 0 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+  .poderes__lista { gap: 7px; }
+  .poder { padding: 8px 11px 9px; }
+  .poder__texto { font-size: 12px; line-height: 1.3; }
+  .poderes__escolha { margin-top: 10px; padding: 10px; gap: 7px; }
+  .poderes__escolha .botao { padding: 6px 12px; font-size: 13px; }
+  .poderes__pergunta { font-size: 13px; }
+  .poderes__rival { margin-top: 10px; }
+  .poderes__efeitos { margin-top: 10px; gap: 6px; }
+  .poderes__efeitos li { padding: 6px 10px; font-size: 12px; }
+
+  /* Direita: monte */
+  .monte { flex: none; }
+  .monte__svg { max-height: clamp(70px, 13vh, 120px); }
+  .monte__conta { margin-top: 4px; }
+
+  /* Direita: lance a lance ocupa o que sobra; só a lista rola, por dentro */
+  .registro { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .registro__lista { flex: 1; min-height: 0; max-height: none; gap: 8px; scrollbar-width: thin; }
+
+  /* Mesa: a madeira e o feltro esticam até o fim da coluna */
+  .mesa { display: flex; flex-direction: column; min-height: 0; padding: 10px; }
+  .feltro { flex: 1; min-height: 0; padding: 10px 14px 10px; gap: 6px; }
+
+  .oponente { gap: 4px; }
+  .oponente__mao { min-height: 0; padding-top: 2px; }
+  .carta { width: 24px; height: 48px; }
+
+  .cadeia { position: relative; min-height: 0; }
+  .cadeia__svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .alerta-poder { padding: 5px 14px 6px; }
+  .alerta-poder__texto { font-size: 13px; }
+
+  .vez { padding: 5px 14px; font-size: 13px; }
+  .pontas__meia { width: 26px; height: 26px; }
+
+  /* Sua mão: a peça acompanha a altura da janela */
+  .mao { gap: 6px; }
+  .mao__pecas { min-height: 0; padding-top: 16px; }
+  .peca-mao {
+    width: clamp(38px, 6.6vh, 56px);
+    height: clamp(76px, 13.2vh, 112px);
+  }
+  .dica-texto { padding: 5px 12px; font-size: 13px; }
+  .acoes { gap: 8px; }
+  .acoes .botao { padding: 7px 16px; }
 }
 
 @media (max-width: 720px) {
@@ -612,6 +838,7 @@ button:focus-visible { outline: 2px solid var(--ouro); outline-offset: 3px; }
   .peca-mao { width: 42px; height: 84px; margin: 0 -1px; }
   .mao__pecas { min-height: 110px; }
   .lateral { flex-direction: column; }
+  .poderes__lista { display: flex; flex-direction: column; }
   .fim__titulo { font-size: 32px; }
   .fim__pontos strong { font-size: 48px; }
 }

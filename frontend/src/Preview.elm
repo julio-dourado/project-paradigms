@@ -24,7 +24,7 @@ import Html.Events as HE
 import Process
 import Random
 import Task
-import View exposing (End(..), Hint(..), Piece, Status(..), Winner(..))
+import View exposing (End(..), Hint(..), Piece, Power(..), Status(..), Winner(..))
 
 
 {-| O número do cenário pode vir na URL: `preview.html#3`.
@@ -72,6 +72,7 @@ type Msg
     | AskHint
     | NewGame
     | ComputerStep Int
+    | Noop
 
 
 init : Int -> ( Model, Cmd Msg )
@@ -114,6 +115,8 @@ base =
     , log = []
     , score = noScore
     , error = Nothing
+    , rivalPower = Nothing
+    , powers = Nothing
     }
 
 
@@ -157,6 +160,24 @@ midGame =
 fullChain : List Piece
 fullChain =
     [ ( 0, 0 ), ( 0, 1 ), ( 1, 1 ), ( 1, 2 ), ( 2, 2 ), ( 2, 3 ), ( 3, 3 ), ( 3, 4 ), ( 4, 4 ), ( 4, 5 ), ( 5, 5 ), ( 5, 6 ), ( 6, 6 ), ( 6, 0 ), ( 0, 2 ), ( 2, 4 ), ( 4, 6 ), ( 6, 1 ), ( 1, 3 ), ( 3, 5 ), ( 5, 0 ), ( 0, 3 ), ( 3, 6 ), ( 6, 2 ), ( 2, 5 ), ( 5, 1 ), ( 1, 4 ), ( 4, 0 ) ]
+
+
+{-| Painel de poderes de exemplo, só para ver o visual.
+-}
+demoPowers : View.PowersView
+demoPowers =
+    { mine = [ Freeze, Shield, Flames, Swap ]
+    , usable = [ Freeze, Flames, Swap ]
+    , opponentCount = 3
+    , effects =
+        [ "Congelamento: você não joga na ponta esquerda neste turno."
+        , "Chamas: sua peça deve ter o 4, se possível."
+        ]
+    , revealed = []
+    , moves = Nothing
+    , mustDraw = Nothing
+    , picking = Nothing
+    }
 
 
 {-| O primeiro cenário é sorteado na hora (veja `newGame`).
@@ -213,6 +234,34 @@ scenarios =
                 , status = Finished Draw 0
             }
       , boneyard = []
+      }
+    , { name = "Poderes"
+      , props = { midGame | powers = Just demoPowers }
+      , boneyard = midBoneyard
+      }
+    , { name = "Computador usou poder"
+      , props =
+            { midGame
+                | powers = Just demoPowers
+                , rivalPower = Just "O computador usou Congelamento: você não joga na ponta esquerda no próximo turno."
+                , log =
+                    "Computador jogou 0|3 na ponta direita."
+                        :: "O computador usou Congelamento: você não joga na ponta esquerda no próximo turno."
+                        :: midGame.log
+            }
+      , boneyard = midBoneyard
+      }
+    , { name = "Poderes: escolher a ponta"
+      , props = { midGame | powers = Just { demoPowers | picking = Just Freeze } }
+      , boneyard = midBoneyard
+      }
+    , { name = "Poderes: buchas reveladas"
+      , props =
+            { midGame
+                | opponentHand = [ ( 3, 3 ), ( 1, 2 ), ( 5, 5 ), ( 0, 6 ) ]
+                , powers = Just { demoPowers | revealed = [ ( 3, 3 ), ( 5, 5 ) ], picking = Just Flames }
+            }
+      , boneyard = midBoneyard
       }
     , { name = "Carregando", props = { base | status = Loading }, boneyard = [] }
     , { name = "Erro de rede"
@@ -474,6 +523,9 @@ update msg model =
                                 DrawHint
             in
             ( { model | props = { props | hint = Just hint } }, Cmd.none )
+
+        Noop ->
+            ( model, Cmd.none )
 
         ComputerStep game ->
             if game == model.game && props.status == OpponentTurn then
@@ -886,6 +938,8 @@ view model =
             , onPass = Pass
             , onHint = AskHint
             , onNewGame = NewGame
+            , onPowerPick = \_ -> Noop
+            , onPowerUse = \_ _ -> Noop
             }
             model.props
         ]

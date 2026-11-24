@@ -3,8 +3,8 @@ module Main exposing (main)
 {-| Lógica da tela (parte 5).
 
 Liga o visual (`View.elm`, parte 6) ao backend (`Api.elm`, parte 4).
-Aqui ficam a seleção de peça e de ponta, o controle de turnos e as
-mensagens de erro.
+Aqui ficam a seleção de peça e de ponta, o controle de turnos, o uso dos
+poderes especiais e as mensagens de erro.
 
 Quem decide as regras é o Prolog. A tela guarda o último estado que o
 backend confirmou e segue o `turn` que vem nele: depois da jogada do
@@ -21,7 +21,7 @@ import Browser
 import Html exposing (Html)
 import Process
 import Task
-import View exposing (End(..), Hint(..), Piece, Status(..), Winner(..))
+import View exposing (End(..), Hint(..), Piece, Power(..), PowerArg(..), Status(..), Winner(..))
 
 
 main : Program (Maybe String) Model Msg
@@ -50,6 +50,19 @@ type alias Model =
     , score : { player : Int, opponent : Int }
     , error : Maybe String
 
+    -- Frase do poder que o computador acabou de usar. Fica à vista na mesa
+    -- até o jogador fazer a próxima jogada.
+    , rivalPower : Maybe String
+
+    -- O que o Prolog calculou para a vez do jogador (veja `Api.Reply`).
+    , moves : Maybe (List ( Piece, End ))
+    , mustDraw : Maybe Bool
+    , usable : List Power
+    , revealed : List Piece
+
+    -- Poder que espera o jogador escolher ponta, número ou peça.
+    , picking : Maybe Power
+
     -- Há uma requisição em andamento: cliques são ignorados até ela voltar.
     , busy : Bool
 
@@ -74,6 +87,9 @@ emptyState =
     , table = []
     , boneyard = []
     , turn = Api.Player
+    , playerPowers = []
+    , opponentPowers = []
+    , effects = []
     }
 
 
@@ -90,6 +106,12 @@ init flags =
         , log = []
         , score = { player = 0, opponent = 0 }
         , error = Nothing
+        , rivalPower = Nothing
+        , moves = Nothing
+        , mustDraw = Nothing
+        , usable = []
+        , revealed = []
+        , picking = Nothing
         , busy = False
         , game = 0
         , retries = 0
@@ -113,6 +135,12 @@ startGame model =
         , lastPlayed = Nothing
         , log = []
         , error = Nothing
+        , rivalPower = Nothing
+        , moves = Nothing
+        , mustDraw = Nothing
+        , usable = []
+        , revealed = []
+        , picking = Nothing
         , busy = True
         , game = game
         , retries = 0
@@ -131,12 +159,15 @@ type Msg
     | DrawFromBoneyard
     | PassTurn
     | AskHint
+    | PickPower (Maybe Power)
+    | UsePower Power PowerArg
     | NewGame
     | OpponentThinks Int
     | GotGame Int (Result Api.Error Api.Reply)
     | GotPlay Int Api.Action (Result Api.Error Api.Reply)
     | GotOpponent Int (Result Api.Error Api.Reply)
     | GotHint Int (Result Api.Error Hint)
+    | GotPower Int Power (Result Api.Error Api.Reply)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -174,6 +205,22 @@ update msg model =
             else
                 ( model, Cmd.none )
 
+        PickPower choice ->
+            if canAct model then
+                ( { model | picking = choice, selected = Nothing, error = Nothing }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
+
+        UsePower chosen arg ->
+            if canAct model then
+                ( { model | busy = True, picking = Nothing, selected = Nothing, hint = Nothing, error = Nothing }
+                , Api.usePower model.api model.state chosen arg (GotPower model.game chosen)
+                )
+
+            else
+                ( model, Cmd.none )
+
         OpponentThinks game ->
             if game == model.game && opponentTurn model && not model.busy then
                 ( { model | busy = True }
@@ -206,7 +253,7 @@ update msg model =
             else
                 case result of
                     Ok reply ->
-                        settle reply (playerLines action model.state reply.state) model
+                        settle reply (playerLines action model.state reply) model
 
                     Err error ->
                         ( { model | busy = False, error = Just (describe model (rejected action) error) }
@@ -220,10 +267,24 @@ update msg model =
             else
                 case result of
                     Ok reply ->
-                        settle reply (opponentLines model.state reply.state) { model | retries = 0 }
+                        settle reply (opponentLines model.state reply) { model | retries = 0 }
 
                     Err error ->
                         retryOpponent error model
+
+        GotPower game chosen result ->
+            if game /= model.game then
+                ( model, Cmd.none )
+
+            else
+                case result of
+                    Ok reply ->
+                        settle reply (playerPowerLines reply) model
+
+                    Err error ->
+                        ( { model | busy = False, error = Just (describe model ("Não deu para usar " ++ View.powerName chosen ++ " agora.") error) }
+                        , Cmd.none
+                        )
 
         GotHint game result ->
             if game /= model.game then
@@ -282,12 +343,18 @@ settle reply lines model =
                 , busy = False
                 , error = Nothing
                 , lastPlayed =
-                    case placed model.state.table reply.state.table of
-                        Just ( p, _ ) ->
+                    case List.reverse reply.event.played of
+                        ( p, _ ) :: _ ->
                             Just p
 
-                        Nothing ->
+                        [] ->
                             model.lastPlayed
+                , moves = reply.moves
+                , mustDraw = reply.mustDraw
+                , usable = reply.usable
+                , revealed = reply.revealed
+                , picking = Nothing
+                , rivalPower = rivalAlert reply
                 , log = lines ++ model.log
             }
     in
@@ -301,6 +368,24 @@ settle reply lines model =
 
             else
                 ( next, Cmd.none )
+
+
+{-| Se o computador usou um poder nesta resposta, a frase para a faixa de
+aviso da mesa. Qualquer outra resposta (a jogada do jogador, por exemplo)
+apaga o aviso.
+-}
+rivalAlert : Api.Reply -> Maybe String
+rivalAlert reply =
+    case reply.event.power of
+        Just used ->
+            if used.who == Api.Opponent then
+                Just (powerLine used)
+
+            else
+                Nothing
+
+        Nothing ->
+            Nothing
 
 
 {-| A pausa de "computador pensando" antes de pedir a jogada dele.
@@ -387,15 +472,26 @@ openingLine reply =
             [ "Nova partida." ]
 
 
-playerLines : Api.Action -> Api.State -> Api.State -> List String
-playerLines action before after =
+playerLines : Api.Action -> Api.State -> Api.Reply -> List String
+playerLines action before reply =
+    let
+        after =
+            reply.state
+    in
     case action of
         Api.Place _ _ ->
-            case placed before.table after.table of
-                Just ( p, side ) ->
-                    [ placeLine "Você" before.table p side ]
+            case reply.event.played of
+                ( p, side ) :: _ ->
+                    -- Com a Manipulação do tempo a vez continua com o jogador.
+                    (if after.turn == Api.Player then
+                        [ "Manipulação do tempo: você joga de novo." ]
 
-                Nothing ->
+                     else
+                        []
+                    )
+                        ++ [ placeLine "Você" before.table p side ]
+
+                [] ->
                     []
 
         Api.Draw ->
@@ -410,45 +506,141 @@ playerLines action before after =
             [ "Você passou a vez." ]
 
 
-{-| O computador pode comprar várias peças antes de jogar ou passar
-(`draw_until_playable/6`). As peças dele ficam escondidas: só a quantidade
-aparece.
+{-| O computador pode usar um poder, comprar várias peças (e a extra da
+Maldição) e jogar uma ou duas peças. As peças dele ficam escondidas: só a
+quantidade aparece. As frases saem do `event` da resposta; a mais nova vem
+primeiro.
 -}
-opponentLines : Api.State -> Api.State -> List String
-opponentLines before after =
+opponentLines : Api.State -> Api.Reply -> List String
+opponentLines before reply =
     let
-        move =
-            placed before.table after.table
+        event =
+            reply.event
 
-        played =
-            if move == Nothing then
-                0
+        playLines =
+            List.indexedMap
+                (\i ( p, side ) ->
+                    placeLine "Computador"
+                        (if i == 0 then
+                            before.table
+
+                         else
+                            [ p ]
+                        )
+                        p
+                        side
+                )
+                event.played
+
+        moveLines =
+            if List.isEmpty playLines then
+                [ "Computador passou a vez." ]
 
             else
-                1
-
-        bought =
-            List.length after.opponentHand - List.length before.opponentHand + played
+                List.reverse playLines
 
         drawLine =
-            if bought == 1 then
+            if event.drawn == 1 then
                 [ "Computador comprou 1 peça." ]
 
-            else if bought > 1 then
-                [ "Computador comprou " ++ String.fromInt bought ++ " peças." ]
+            else if event.drawn > 1 then
+                [ "Computador comprou " ++ String.fromInt event.drawn ++ " peças." ]
 
             else
                 []
-
-        moveLine =
-            case move of
-                Just ( p, side ) ->
-                    placeLine "Computador" before.table p side
-
-                Nothing ->
-                    "Computador passou a vez."
     in
-    moveLine :: drawLine
+    moveLines ++ drawLine ++ powerLines reply
+
+
+playerPowerLines : Api.Reply -> List String
+playerPowerLines =
+    powerLines
+
+
+powerLines : Api.Reply -> List String
+powerLines reply =
+    case reply.event.power of
+        Just used ->
+            [ powerLine used ]
+
+        Nothing ->
+            []
+
+
+{-| A frase de um poder usado, por quem usou e pelo resultado.
+-}
+powerLine : Api.PowerEvent -> String
+powerLine used =
+    let
+        ( who, target ) =
+            case used.who of
+                Api.Player ->
+                    ( "Você", "o computador" )
+
+                Api.Opponent ->
+                    ( "O computador", "você" )
+
+        name =
+            View.powerName used.power
+
+        argText =
+            Maybe.withDefault "" used.arg
+    in
+    if used.outcome == "shielded" then
+        who ++ " usou " ++ name ++ ", mas o Escudo anulou o ataque."
+
+    else
+        case used.power of
+            Freeze ->
+                who ++ " usou " ++ name ++ ": " ++ target ++ " não joga na " ++ endWord argText ++ " no próximo turno."
+
+            Curse ->
+                who ++ " usou " ++ name ++ ": " ++ target ++ " compra uma peça a mais se não puder jogar."
+
+            Flames ->
+                who ++ " usou " ++ name ++ ": a próxima peça de " ++ target ++ " deve ter o " ++ argText ++ ", se possível."
+
+            Overload ->
+                case used.revealed of
+                    [] ->
+                        who ++ " usou " ++ name ++ ": " ++ target ++ " não tem buchas."
+
+                    shown ->
+                        who ++ " usou " ++ name ++ ": buchas reveladas: " ++ String.join ", " (List.map text shown) ++ "."
+
+            Swap ->
+                swapLine who name used
+
+            Recovery ->
+                swapLine who name used
+
+            Teleport ->
+                who ++ " usou " ++ name ++ ": as restrições foram ignoradas."
+
+            TimeWarp ->
+                who ++ " usou " ++ name ++ ": pode jogar duas peças seguidas."
+
+            Shield ->
+                who ++ " usou " ++ name ++ "."
+
+
+swapLine : String -> String -> Api.PowerEvent -> String
+swapLine who name used =
+    case ( used.gave, used.got ) of
+        ( Just out, Just inn ) ->
+            who ++ " usou " ++ name ++ ": trocou a " ++ text out ++ " pela " ++ text inn ++ " do monte."
+
+        _ ->
+            who ++ " usou " ++ name ++ ": trocou uma peça com o monte."
+
+
+endWord : String -> String
+endWord side =
+    if side == "left" then
+        "ponta esquerda"
+
+    else
+        "ponta direita"
 
 
 placeLine : String -> List Piece -> Piece -> End -> String
@@ -458,29 +650,6 @@ placeLine who table p side =
 
     else
         who ++ " jogou " ++ text p ++ " na " ++ endName side ++ "."
-
-
-{-| A peça que entrou na mesa e em qual ponta, comparando antes e depois.
--}
-placed : List Piece -> List Piece -> Maybe ( Piece, End )
-placed before after =
-    if List.length after /= List.length before + 1 then
-        Nothing
-
-    else
-        case ( before, after ) of
-            ( [], p :: _ ) ->
-                Just ( p, RightEnd )
-
-            ( b :: _, a :: _ ) ->
-                if a /= b then
-                    Just ( a, LeftEnd )
-
-                else
-                    List.reverse after |> List.head |> Maybe.map (\p -> ( p, RightEnd ))
-
-            _ ->
-                Nothing
 
 
 
@@ -525,6 +694,8 @@ view model =
         , onPass = PassTurn
         , onHint = AskHint
         , onNewGame = NewGame
+        , onPowerPick = PickPower
+        , onPowerUse = UsePower
         }
         (toProps model)
 
@@ -548,7 +719,73 @@ toProps model =
     , log = model.log
     , score = model.score
     , error = model.error
+    , rivalPower = model.rivalPower
+    , powers = powersView model
     }
+
+
+{-| O painel de poderes. Os poderes só são usáveis na vez do jogador; o que
+vale como jogada e a compra obrigatória vêm do Prolog (`moves`, `mustDraw`).
+-}
+powersView : Model -> Maybe View.PowersView
+powersView model =
+    Just
+        { mine = model.state.playerPowers
+        , usable =
+            if canAct model then
+                model.usable
+
+            else
+                []
+        , opponentCount = List.length model.state.opponentPowers
+        , effects = effectNotes model.state.effects
+        , revealed = model.revealed
+        , moves = model.moves
+        , mustDraw = model.mustDraw
+        , picking = model.picking
+        }
+
+
+{-| Frases dos efeitos ativos. Quem decide o que cada efeito faz é o Prolog;
+aqui eles só viram texto.
+-}
+effectNotes : List Api.Effect -> List String
+effectNotes effects =
+    List.filterMap effectNote effects
+
+
+effectNote : Api.Effect -> Maybe String
+effectNote e =
+    case e of
+        Api.Frozen Api.Player side ->
+            Just ("Congelamento: você não joga na " ++ endName side ++ " neste turno.")
+
+        Api.Frozen Api.Opponent side ->
+            Just ("Congelamento: o computador não joga na " ++ endName side ++ " no turno dele.")
+
+        Api.Burning Api.Player n ->
+            Just ("Chamas: sua peça deve ter o " ++ String.fromInt n ++ ", se possível.")
+
+        Api.Burning Api.Opponent n ->
+            Just ("Chamas: a próxima peça do computador deve ter o " ++ String.fromInt n ++ ".")
+
+        Api.Cursed Api.Player ->
+            Just "Maldição: na primeira vez que você comprar do monte, leva uma peça a mais."
+
+        Api.Cursed Api.Opponent ->
+            Just "Maldição: na primeira vez que o computador comprar do monte, ele leva uma peça a mais."
+
+        Api.CurseDue Api.Player ->
+            Just "Maldição: compre mais uma peça antes de jogar."
+
+        Api.ExtraPlay Api.Player ->
+            Just "Manipulação do tempo: você joga duas peças neste turno."
+
+        Api.Used Api.Player ->
+            Just "Você já usou um poder neste turno."
+
+        _ ->
+            Nothing
 
 
 status : Model -> Status

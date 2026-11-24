@@ -31,7 +31,7 @@ install: $(PY)
 test: test-prolog test-api
 
 test-prolog:
-	cd $(PROLOG_DIR) && swipl -g "consult(test_domino), (run_tests -> halt(0) ; halt(1))"
+	cd $(PROLOG_DIR) && swipl -g "consult(test_domino), consult(test_powers), (run_tests -> halt(0) ; halt(1))"
 
 test-api: $(PY)
 	cd backend && .venv/bin/python -m pytest -v
