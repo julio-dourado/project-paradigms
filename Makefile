@@ -5,6 +5,7 @@
 #   make build     compila o Elm (jogo e vitrine)
 #   make run       sobe o backend em http://localhost:8000 (API + tela)
 #   make preview   compila e abre a vitrine do visual (sem backend)
+#   make validar   confere a forma do RELATORIO.md (scripts/validar_entrega.py)
 
 PYTHON   ?= python3
 PORT     ?= 8000
@@ -15,7 +16,7 @@ ELM      ?= elm
 PROLOG_DIR   := backend/prolog
 FRONTEND_DIR := frontend
 
-.PHONY: help install test test-prolog test-api build build-main build-preview run preview clean
+.PHONY: help install test test-prolog test-api build build-main build-preview run preview clean validar
 
 help:
 	@sed -n 's/^#   //p' Makefile
@@ -58,3 +59,6 @@ clean:
 	rm -rf $(FRONTEND_DIR)/build $(FRONTEND_DIR)/elm-stuff
 	find backend -name __pycache__ -type d -prune -exec rm -rf {} +
 	rm -rf backend/.pytest_cache
+
+validar:
+	uv run scripts/validar_entrega.py
